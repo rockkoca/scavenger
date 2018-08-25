@@ -11,7 +11,7 @@ use futures::sync::mpsc;
 use ocl::GpuBuffer;
 use ocl::GpuContext;
 use plot::{Plot, SCOOP_SIZE};
-use reader::Reader;
+use reader::{Reader, WritableBuffer};
 use requests::RequestHandler;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -53,16 +53,6 @@ pub struct State {
     processed_reader_tasks: usize,
 }
 
-pub trait Buffer {
-    fn get_buffer(&mut self) -> Arc<Mutex<Vec<u8>>>;
-
-    fn get_buffer_for_writing(&mut self) -> Arc<Mutex<Vec<u8>>>;
-
-    fn get_gpu_context(&self) -> Option<Arc<Mutex<GpuContext>>>;
-
-    fn get_gpu_buffers(&self) -> Option<&GpuBuffer>;
-}
-
 pub struct CpuBuffer {
     data: Arc<Mutex<Vec<u8>>>,
 }
@@ -83,19 +73,9 @@ impl CpuBuffer {
     }
 }
 
-impl Buffer for CpuBuffer {
+impl WritableBuffer for CpuBuffer {
     fn get_buffer(&mut self) -> Arc<Mutex<Vec<u8>>> {
         self.data.clone()
-    }
-    fn get_buffer_for_writing(&mut self) -> Arc<Mutex<Vec<u8>>> {
-        self.data.clone()
-    }
-    fn get_gpu_context(&self) -> Option<Arc<Mutex<GpuContext>>> {
-        None
-    }
-
-    fn get_gpu_buffers(&self) -> Option<&GpuBuffer> {
-        None
     }
 }
 
@@ -186,13 +166,13 @@ impl Miner {
 
             for _ in 0..1 {
                 let gpu_buffer = GpuBuffer::new(&context);
-                tx_empty_buffers.send(Box::new(gpu_buffer) as Box<Buffer + Send>);
+                tx_empty_buffers.send(Box::new(gpu_buffer) as Box<WritableBuffer + Send>);
             }
         }
 
         for _ in 0..cpu_worker_thread_count * 2 {
             let cpu_buffer = CpuBuffer::new(buffer_size_cpu);
-            tx_empty_buffers.send(Box::new(cpu_buffer) as Box<Buffer + Send>);
+            tx_empty_buffers.send(Box::new(cpu_buffer) as Box<WritableBuffer + Send>);
         }
 
         let core_ids = core_affinity::get_core_ids().unwrap();

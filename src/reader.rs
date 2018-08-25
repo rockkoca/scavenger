@@ -2,15 +2,16 @@ extern crate rayon;
 
 use chan;
 use filetime::FileTime;
-use miner::Buffer;
+use miner::CpuBuffer;
+use ocl::GpuBuffer;
 use plot::Plot;
+use std::any::Any;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::mpsc::{channel, Sender, TryRecvError};
 use std::sync::{Arc, Mutex};
 
-pub struct ReadReply {
-    pub buffer: Box<Buffer + Send>,
+pub struct ReadInfo {
     pub len: usize,
     pub height: u64,
     pub gensig: Arc<[u8; 32]>,
@@ -18,12 +19,21 @@ pub struct ReadReply {
     pub finished: bool,
 }
 
+pub enum Buffer {
+    Cpu(CpuBuffer),
+    Gpu(GpuBuffer),
+}
+
+pub trait WritableBuffer {
+    fn get_buffer(&mut self) -> Arc<Mutex<Vec<u8>>>;
+}
+
 pub struct Reader {
     drive_id_to_plots: HashMap<String, Arc<Mutex<Vec<RefCell<Plot>>>>>,
     pool: rayon::ThreadPool,
-    rx_empty_buffers: chan::Receiver<Box<Buffer + Send>>,
-    tx_read_replies_cpu: chan::Sender<ReadReply>,
-    tx_read_replies_gpu: chan::Sender<ReadReply>,
+    rx_empty_buffers: chan::Receiver<Box<WritableBuffer + Send>>,
+    tx_read_replies_cpu: chan::Sender<(Box<Buffer>, ReadInfo)>,
+    tx_read_replies_gpu: chan::Sender<(Box<Buffer>, ReadInfo)>,
     interupts: Vec<Sender<()>>,
 }
 
@@ -31,9 +41,9 @@ impl Reader {
     pub fn new(
         drive_id_to_plots: HashMap<String, Arc<Mutex<Vec<RefCell<Plot>>>>>,
         num_threads: usize,
-        rx_empty_buffers: chan::Receiver<Box<Buffer + Send>>,
-        tx_read_replies_cpu: chan::Sender<ReadReply>,
-        tx_read_replies_gpu: chan::Sender<ReadReply>,
+        rx_empty_buffers: chan::Receiver<Box<WritableBuffer + Send>>,
+        tx_read_replies_cpu: chan::Sender<(Box<Buffer>, ReadInfo)>,
+        tx_read_replies_gpu: chan::Sender<(Box<Buffer>, ReadInfo)>,
     ) -> Reader {
         for plots in drive_id_to_plots.values() {
             let mut plots = plots.lock().unwrap();
@@ -114,8 +124,8 @@ impl Reader {
                 }
 
                 'inner: for mut buffer in rx_empty_buffers.clone() {
-                    let mut_bs = &*buffer.get_buffer_for_writing();
-                    let mut bs = mut_bs.lock().unwrap();
+                    let bs_mu = &*buffer.get_buffer();
+                    let mut bs = bs_mu.lock().unwrap();
                     let (bytes_read, start_nonce, next_plot) = match p.read(&mut *bs, scoop) {
                         Ok(x) => x,
                         Err(e) => {
@@ -128,31 +138,21 @@ impl Reader {
                     };
 
                     let finished = i_p == (plot_count - 1) && next_plot;
-                    //fork
-                    let gpu_context = buffer.get_gpu_context();
 
-                    match &gpu_context {
-                        None => {
-                            tx_read_replies_cpu.send(ReadReply {
-                                buffer,
-                                len: bytes_read,
-                                height,
-                                gensig: gensig.clone(),
-                                start_nonce,
-                                finished,
-                            });
-                        }
-                        Some(_context) => {
-                            tx_read_replies_gpu.send(ReadReply {
-                                buffer,
-                                len: bytes_read,
-                                height,
-                                gensig: gensig.clone(),
-                                start_nonce,
-                                finished,
-                            });
-                        }
-                    }
+                    let ri = ReadInfo {
+                        len: bytes_read,
+                        height,
+                        gensig: gensig.clone(),
+                        start_nonce,
+                        finished,
+                    };
+
+                    let buffer = Box::new(buffer) as Box<Any>;
+                    match_downcast!(buffer, {
+                        b: CpuBuffer => tx_read_replies_cpu.send((Box::new(Buffer::Cpu(*b)), ri)),
+                        b: GpuBuffer => tx_read_replies_gpu.send((Box::new(Buffer::Gpu(*b)), ri)),
+                        _ => panic!()
+                    });
 
                     if next_plot {
                         break 'inner;

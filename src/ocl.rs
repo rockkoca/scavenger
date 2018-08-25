@@ -7,7 +7,7 @@ use self::core::{
 };
 
 use config::Cfg;
-use miner::Buffer;
+use reader::WritableBuffer;
 use std::ffi::CString;
 
 use std::process;
@@ -130,7 +130,7 @@ pub struct GpuContext {
 
 pub struct GpuBuffer {
     data: Arc<Mutex<Vec<u8>>>,
-    context: Arc<Mutex<GpuContext>>,
+    pub context: Arc<Mutex<GpuContext>>,
     gensig_gpu: core::Mem,
     data_gpu: core::Mem,
     deadlines_gpu: core::Mem,
@@ -199,8 +199,8 @@ impl GpuBuffer {
     }
 }
 
-impl Buffer for GpuBuffer {
-    fn get_buffer_for_writing(&mut self) -> Arc<Mutex<Vec<u8>>> {
+impl WritableBuffer for GpuBuffer {
+    fn get_buffer(&mut self) -> Arc<Mutex<Vec<u8>>> {
         // pointer is cached, however, calling enqueue map to make DMA work.
         let locked_context = self.context.lock().unwrap();
         if locked_context.mapping {
@@ -220,17 +220,6 @@ impl Buffer for GpuBuffer {
             }
         }
         self.data.clone()
-    }
-
-    fn get_buffer(&mut self) -> Arc<Mutex<Vec<u8>>> {
-        self.data.clone()
-    }
-
-    fn get_gpu_context(&self) -> Option<Arc<Mutex<GpuContext>>> {
-        Some(self.context.clone())
-    }
-    fn get_gpu_buffers(&self) -> Option<&GpuBuffer> {
-        Some(self)
     }
 }
 
@@ -299,7 +288,7 @@ pub fn find_best_deadline_gpu(
 ) -> (u64, u64) {
     let data = buffer.data.clone();
     let data2 = (*data).lock().unwrap();
-    let gpu_context_mtx = (*buffer).get_gpu_context().unwrap();
+    let gpu_context_mtx = &buffer.context;
     let gpu_context = gpu_context_mtx.lock().unwrap();
 
     unsafe {
