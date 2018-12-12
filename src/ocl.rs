@@ -1,6 +1,4 @@
-extern crate aligned_alloc;
 extern crate ocl_core as core;
-extern crate page_size;
 
 use self::core::{
     ArgVal, ContextProperties, DeviceInfo, Event, KernelWorkGroupInfo, PlatformInfo, Status,
@@ -9,13 +7,13 @@ use self::core::{
 use config::Cfg;
 use miner::Buffer;
 use std::ffi::CString;
-
+use std::slice::from_raw_parts_mut;
 use std::process;
 use std::sync::{Arc, Mutex};
 use std::u64;
 
 static SRC: &'static str = include_str!("ocl/kernel.cl");
-
+const SCOOP_SIZE: u64 = 64;
 // convert the info or error to a string for printing:
 macro_rules! to_string {
     ($expr:expr) => {
@@ -129,14 +127,14 @@ pub struct GpuContext {
 }
 
 pub struct GpuBuffer {
-    data: Arc<Mutex<Vec<u8>>>,
+    buffer_ptr_host: Option<core::MemMap<u8>>,
+    buffer_host: Option<core::Mem>,
     context: Arc<Mutex<GpuContext>>,
     gensig_gpu: core::Mem,
     data_gpu: core::Mem,
     deadlines_gpu: core::Mem,
     best_deadline_gpu: core::Mem,
     best_offset_gpu: core::Mem,
-    memmap: Option<Arc<core::MemMap<u8>>>,
 }
 
 impl GpuBuffer {
@@ -167,69 +165,132 @@ impl GpuBuffer {
             core::create_buffer::<_, u64>(&context.context, core::MEM_READ_WRITE, 1, None).unwrap()
         };
 
-        let pointer = aligned_alloc::aligned_alloc(&context.gdim1[0] * 64, page_size::get());
-        let data: Vec<u8>;
-        unsafe {
-            data = Vec::from_raw_parts(
-                pointer as *mut u8,
-                &context.gdim1[0] * 64,
-                &context.gdim1[0] * 64,
-            );
-        }
-
-        let data_gpu = unsafe {
-            core::create_buffer(
-                &context.context,
-                core::MEM_READ_ONLY | core::MEM_USE_HOST_PTR,
-                context.gdim1[0] * 64,
-                Some(&data),
-            ).unwrap()
-        };
-
-        GpuBuffer {
-            data: Arc::new(Mutex::new(data)),
-            context: context_mu.clone(),
-            gensig_gpu,
-            data_gpu,
-            deadlines_gpu,
-            best_deadline_gpu,
-            best_offset_gpu,
-            memmap: None,
+        // todo
+        let nvidia=true;
+        // create buffers
+        // mapping = zero copy buffers, no mapping = pinned memory for fast DMA.
+        if context.mapping {
+            let data_gpu = unsafe {
+                core::create_buffer::<_, u8>(
+                     &context.context,
+                    core::MEM_READ_ONLY | core::MEM_ALLOC_HOST_PTR,
+                    (SCOOP_SIZE as usize) * context.gdim1[0],
+                    None,
+                ).unwrap()
+            };
+            GpuBuffer {
+                buffer_ptr_host: None,
+                buffer_host: None,
+                context: context_mu.clone(),
+                gensig_gpu,
+                data_gpu,
+                deadlines_gpu,
+                best_deadline_gpu,
+                best_offset_gpu,
+            }
+        } else {
+            let buffer_host = unsafe {
+                core::create_buffer::<_, u8>(
+                    &context.context,
+                    core::MEM_READ_WRITE | core::MEM_ALLOC_HOST_PTR,
+                    (SCOOP_SIZE as usize) * context.gdim1[0],
+                    None,
+                ).unwrap()
+            };
+            let buffer_ptr_host = unsafe {
+                Some(
+                    core::enqueue_map_buffer::<u8, _, _, _>(
+                        &context.queue,
+                        &buffer_host,
+                        true,
+                        core::MAP_WRITE,
+                        0,
+                        (SCOOP_SIZE as usize) * context.gdim1[0],
+                        None::<Event>,
+                        None::<&mut Event>,
+                    ).unwrap(),
+                )
+            };
+            let data_gpu = if nvidia {
+                buffer_host.clone()
+            } else {
+                unsafe {
+                    core::create_buffer::<_, u8>(
+                        &context.context,
+                        core::MEM_READ_WRITE,
+                         (SCOOP_SIZE as usize) * context.gdim1[0],
+                        None,
+                    ).unwrap()
+                }
+            };
+            let buffer_host = if nvidia { None } else { Some(buffer_host) };
+            GpuBuffer {
+                buffer_ptr_host,
+                buffer_host,
+                context: context_mu.clone(),
+                gensig_gpu,
+                data_gpu,
+                deadlines_gpu,
+                best_deadline_gpu,
+                best_offset_gpu,
+            }
         }
     }
 }
 
 impl Buffer for GpuBuffer {
     fn get_buffer_for_writing(&mut self) -> Arc<Mutex<Vec<u8>>> {
-        // pointer is cached, however, calling enqueue map to make DMA work.
         let locked_context = self.context.lock().unwrap();
         if locked_context.mapping {
             unsafe {
-                self.memmap = Some(Arc::new(
+                self.buffer_ptr_host = Some(
                     core::enqueue_map_buffer::<u8, _, _, _>(
                         &(*locked_context).queue,
                         &self.data_gpu,
                         true,
                         core::MAP_WRITE,
                         0,
-                        &(*locked_context).gdim1[0] * 64,
+                        (SCOOP_SIZE as usize) * locked_context.gdim1[0],
                         None::<Event>,
                         None::<&mut Event>,
                     ).unwrap(),
-                ));
+                );
             }
         }
-        self.data.clone()
+
+        let ptr = self.buffer_ptr_host.as_mut().unwrap().as_mut_ptr();
+        let slice = unsafe { from_raw_parts_mut(ptr, (SCOOP_SIZE as usize) * locked_context.gdim1[0]) };
+        Arc::new(Mutex::new(slice.to_vec()))
     }
 
     fn get_buffer(&mut self) -> Arc<Mutex<Vec<u8>>> {
-        self.data.clone()
+        let locked_context = self.context.lock().unwrap();
+        if locked_context.mapping {
+            unsafe {
+                self.buffer_ptr_host = Some(
+                    core::enqueue_map_buffer::<u8, _, _, _>(
+                        &(*locked_context).queue,
+                        &self.data_gpu,
+                        true,
+                        core::MAP_WRITE,
+                        0,
+                        (SCOOP_SIZE as usize) * locked_context.gdim1[0],
+                        None::<Event>,
+                        None::<&mut Event>,
+                    ).unwrap(),
+                );
+            }
+        }
+
+        let ptr = self.buffer_ptr_host.as_mut().unwrap().as_mut_ptr();
+        let slice = unsafe { from_raw_parts_mut(ptr, (SCOOP_SIZE as usize) * locked_context.gdim1[0]) };
+        Arc::new(Mutex::new(slice.to_vec()))
     }
 
     fn get_gpu_context(&self) -> Option<Arc<Mutex<GpuContext>>> {
         Some(self.context.clone())
     }
-    fn get_gpu_buffers(&self) -> Option<&GpuBuffer> {
+    fn get_gpu_buffers(&mut self) -> Option<&mut GpuBuffer> {
         Some(self)
     }
 }
@@ -293,11 +354,11 @@ impl GpuContext {
 }
 
 pub fn find_best_deadline_gpu(
-    buffer: &GpuBuffer,
+    buffer: &mut GpuBuffer,
     nonce_count: usize,
     gensig: [u8; 32],
 ) -> (u64, u64) {
-    let data = buffer.data.clone();
+    let data = buffer.get_buffer();
     let data2 = (*data).lock().unwrap();
     let gpu_context_mtx = (*buffer).get_gpu_context().unwrap();
     let gpu_context = gpu_context_mtx.lock().unwrap();
@@ -315,8 +376,7 @@ pub fn find_best_deadline_gpu(
     }
 
     if gpu_context.mapping {
-        let temp = buffer.memmap.clone();
-        let temp2 = temp.unwrap();
+        let temp2 = buffer.buffer_ptr_host.as_mut().unwrap();
         core::enqueue_unmap_mem_object(
             &gpu_context.queue,
             &buffer.data_gpu,
