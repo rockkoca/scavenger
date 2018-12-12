@@ -126,6 +126,7 @@ pub struct GpuContext {
     mapping: bool,
 }
 
+#[allow(dead_code)]
 pub struct GpuBuffer {
     buffer_ptr_host: Option<core::MemMap<u8>>,
     buffer_host: Option<core::Mem>,
@@ -139,8 +140,6 @@ pub struct GpuBuffer {
 
 impl GpuBuffer {
     pub fn new(context_mu: &Arc<Mutex<GpuContext>>) -> Self
-    where
-        Self: Sized,
     {
         let context = context_mu.lock().unwrap();
 
@@ -192,7 +191,7 @@ impl GpuBuffer {
             let buffer_host = unsafe {
                 core::create_buffer::<_, u8>(
                     &context.context,
-                    core::MEM_READ_WRITE | core::MEM_ALLOC_HOST_PTR,
+                    core::MEM_READ_ONLY | core::MEM_ALLOC_HOST_PTR,
                     (SCOOP_SIZE as usize) * context.gdim1[0],
                     None,
                 ).unwrap()
@@ -217,7 +216,7 @@ impl GpuBuffer {
                 unsafe {
                     core::create_buffer::<_, u8>(
                         &context.context,
-                        core::MEM_READ_WRITE,
+                        core::MEM_READ_ONLY,
                          (SCOOP_SIZE as usize) * context.gdim1[0],
                         None,
                     ).unwrap()
