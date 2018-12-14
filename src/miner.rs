@@ -60,8 +60,8 @@ pub struct State {
 }
 
 pub trait Buffer {
-    fn get_buffer(&mut self) -> Arc<Mutex<Vec<u8>>>;
-    fn get_buffer_for_writing(&mut self) -> Arc<Mutex<Vec<u8>>>;
+    fn get_buffer(&mut self) -> *mut u8;
+    fn get_buffer_size(&self) -> usize;
     #[cfg(feature = "opencl")]
     fn get_gpu_context(&self) -> Option<Arc<Mutex<GpuContext>>>;
     #[cfg(feature = "opencl")]
@@ -69,24 +69,24 @@ pub trait Buffer {
 }
 
 pub struct CpuBuffer {
-    data: Arc<Mutex<Vec<u8>>>,
+    data: Vec<u8>,
 }
 
 impl CpuBuffer {
     fn new(buffer_size: usize) -> Self {
         let data = vec![1u8; buffer_size];
         CpuBuffer {
-            data: Arc::new(Mutex::new(data)),
+            data: data,
         }
     }
 }
 
 impl Buffer for CpuBuffer {
-    fn get_buffer(&mut self) -> Arc<Mutex<Vec<u8>>> {
-        self.data.clone()
+    fn get_buffer(&mut self) -> *mut u8 {
+        self.data.as_mut_ptr()
     }
-    fn get_buffer_for_writing(&mut self) -> Arc<Mutex<Vec<u8>>> {
-        self.data.clone()
+    fn get_buffer_size(&self) -> usize {
+        self.data.len()
     }
     #[cfg(feature = "opencl")]
     fn get_gpu_context(&self) -> Option<Arc<Mutex<GpuContext>>> {

@@ -5,6 +5,7 @@ use libc::{c_void, uint64_t};
 use miner::Buffer;
 #[cfg(feature = "opencl")]
 use ocl;
+use std::slice::from_raw_parts_mut;
 
 use reader::ReadReply;
 use std::u64;
@@ -103,8 +104,7 @@ pub fn create_worker_task(
                 #[cfg(feature = "opencl")]
                 match &gpu_context {
                     None => {
-                        let mut_bs = buffer.get_buffer();
-                        let mut bs = mut_bs.lock().unwrap();
+                        let mut bs = unsafe { from_raw_parts_mut(buffer.get_buffer(), buffer.get_buffer_size()) };
                         let padded = pad(&mut bs, read_reply.len, 8 * 64);
                         #[cfg(feature = "simd")]
                         unsafe {
@@ -197,8 +197,7 @@ pub fn create_worker_task(
                 }
                 #[cfg(not(feature = "opencl"))]
                 {
-                    let mut_bs = buffer.get_buffer();
-                    let mut bs = mut_bs.lock().unwrap();
+                    let mut bs = unsafe { from_raw_parts_mut(buffer.get_buffer(), buffer.get_buffer_size()) };
                     let padded = pad(&mut bs, read_reply.len, 8 * 64);
                     #[cfg(feature = "simd")]
                     unsafe {

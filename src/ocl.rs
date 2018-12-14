@@ -238,7 +238,8 @@ impl GpuBuffer {
 }
 
 impl Buffer for GpuBuffer {
-    fn get_buffer_for_writing(&mut self) -> Arc<Mutex<Vec<u8>>> {
+
+    fn get_buffer(&mut self) -> *mut u8 {
         let locked_context = self.context.lock().unwrap();
         if locked_context.mapping {
             unsafe {
@@ -257,33 +258,14 @@ impl Buffer for GpuBuffer {
             }
         }
 
-        let ptr = self.buffer_ptr_host.as_mut().unwrap().as_mut_ptr();
-        let slice = unsafe { from_raw_parts_mut(ptr, (SCOOP_SIZE as usize) * locked_context.gdim1[0]) };
-        Arc::new(Mutex::new(slice.to_vec()))
+        self.buffer_ptr_host.as_mut().unwrap().as_mut_ptr()
+        //et slice = unsafe { from_raw_parts_mut(ptr, (SCOOP_SIZE as usize) * locked_context.gdim1[0]) };
+        //Arc::new(Mutex::new(slice.to_vec()))
     }
 
-    fn get_buffer(&mut self) -> Arc<Mutex<Vec<u8>>> {
+    fn get_buffer_size(&self) -> usize {
         let locked_context = self.context.lock().unwrap();
-        if locked_context.mapping {
-            unsafe {
-                self.buffer_ptr_host = Some(
-                    core::enqueue_map_buffer::<u8, _, _, _>(
-                        &(*locked_context).queue,
-                        &self.data_gpu,
-                        true,
-                        core::MAP_WRITE,
-                        0,
-                        (SCOOP_SIZE as usize) * locked_context.gdim1[0],
-                        None::<Event>,
-                        None::<&mut Event>,
-                    ).unwrap(),
-                );
-            }
-        }
-
-        let ptr = self.buffer_ptr_host.as_mut().unwrap().as_mut_ptr();
-        let slice = unsafe { from_raw_parts_mut(ptr, (SCOOP_SIZE as usize) * locked_context.gdim1[0]) };
-        Arc::new(Mutex::new(slice.to_vec()))
+        (SCOOP_SIZE as usize) * locked_context.gdim1[0]
     }
 
     fn get_gpu_context(&self) -> Option<Arc<Mutex<GpuContext>>> {
@@ -357,8 +339,7 @@ pub fn find_best_deadline_gpu(
     nonce_count: usize,
     gensig: [u8; 32],
 ) -> (u64, u64) {
-    let data = buffer.get_buffer();
-    let data2 = (*data).lock().unwrap();
+    let data2 = unsafe { from_raw_parts_mut(buffer.get_buffer(), buffer.get_buffer_size()) };
     let gpu_context_mtx = (*buffer).get_gpu_context().unwrap();
     let gpu_context = gpu_context_mtx.lock().unwrap();
 
