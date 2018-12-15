@@ -7,7 +7,7 @@ use self::core::{
 use config::Cfg;
 use miner::Buffer;
 use std::ffi::CString;
-use std::slice::from_raw_parts_mut;
+use std::slice::from_raw_parts;
 use std::process;
 use std::sync::{Arc, Mutex};
 use std::u64;
@@ -239,7 +239,7 @@ impl GpuBuffer {
 
 impl Buffer for GpuBuffer {
 
-    fn get_buffer(&mut self) -> *mut u8 {
+    fn get_buffer_for_writing(&mut self) -> *mut u8 {
         let locked_context = self.context.lock().unwrap();
         if locked_context.mapping {
             unsafe {
@@ -257,10 +257,11 @@ impl Buffer for GpuBuffer {
                 );
             }
         }
-
         self.buffer_ptr_host.as_mut().unwrap().as_mut_ptr()
-        //et slice = unsafe { from_raw_parts_mut(ptr, (SCOOP_SIZE as usize) * locked_context.gdim1[0]) };
-        //Arc::new(Mutex::new(slice.to_vec()))
+    }
+
+    fn get_buffer_for_reading(&mut self) -> *mut u8 {
+        self.buffer_ptr_host.as_mut().unwrap().as_mut_ptr()
     }
 
     fn get_buffer_size(&self) -> usize {
@@ -339,7 +340,7 @@ pub fn find_best_deadline_gpu(
     nonce_count: usize,
     gensig: [u8; 32],
 ) -> (u64, u64) {
-    let data2 = unsafe { from_raw_parts_mut(buffer.get_buffer(), buffer.get_buffer_size()) };
+    let data2 = unsafe { from_raw_parts(buffer.get_buffer_for_reading(), buffer.get_buffer_size()) };
     let gpu_context_mtx = (*buffer).get_gpu_context().unwrap();
     let gpu_context = gpu_context_mtx.lock().unwrap();
 

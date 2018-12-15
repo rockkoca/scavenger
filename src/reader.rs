@@ -189,7 +189,7 @@ impl Reader {
                     if show_drive_stats {
                         sw.restart();
                     }
-                    let mut bs = unsafe { from_raw_parts_mut(buffer.get_buffer(), buffer.get_buffer_size()) };
+                    let mut bs = unsafe { from_raw_parts_mut(buffer.get_buffer_for_writing(), buffer.get_buffer_size()) };
                     let length = buffer.get_buffer_size();
                     let (bytes_read, start_nonce, next_plot) = match p.read(&mut bs, length, scoop) {
                         Ok(x) => x,

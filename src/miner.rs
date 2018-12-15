@@ -60,7 +60,8 @@ pub struct State {
 }
 
 pub trait Buffer {
-    fn get_buffer(&mut self) -> *mut u8;
+    fn get_buffer_for_writing(&mut self) -> *mut u8;
+    fn get_buffer_for_reading(&mut self) -> *mut u8;
     fn get_buffer_size(&self) -> usize;
     #[cfg(feature = "opencl")]
     fn get_gpu_context(&self) -> Option<Arc<Mutex<GpuContext>>>;
@@ -82,7 +83,10 @@ impl CpuBuffer {
 }
 
 impl Buffer for CpuBuffer {
-    fn get_buffer(&mut self) -> *mut u8 {
+    fn get_buffer_for_writing(&mut self) -> *mut u8 {
+        self.data.as_mut_ptr()
+    }
+    fn get_buffer_for_reading(&mut self) -> *mut u8 {
         self.data.as_mut_ptr()
     }
     fn get_buffer_size(&self) -> usize {

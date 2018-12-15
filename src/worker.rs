@@ -104,7 +104,7 @@ pub fn create_worker_task(
                 #[cfg(feature = "opencl")]
                 match &gpu_context {
                     None => {
-                        let mut bs = unsafe { from_raw_parts_mut(buffer.get_buffer(), buffer.get_buffer_size()) };
+                        let mut bs = unsafe { from_raw_parts_mut(buffer.get_buffer_for_reading(), buffer.get_buffer_size()) };
                         let padded = pad(&mut bs, read_reply.len, 8 * 64);
                         #[cfg(feature = "simd")]
                         unsafe {
