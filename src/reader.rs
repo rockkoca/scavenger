@@ -16,7 +16,6 @@ use std::sync::{Arc, Mutex};
 use stopwatch::Stopwatch;
 #[cfg(windows)]
 use utils::set_thread_ideal_processor;
-use std::slice::from_raw_parts_mut;
 
 pub struct ReadReply {
     pub buffer: Box<Buffer + Send>,
@@ -189,9 +188,9 @@ impl Reader {
                     if show_drive_stats {
                         sw.restart();
                     }
-                    let mut bs = unsafe { from_raw_parts_mut(buffer.get_buffer_for_writing(), buffer.get_buffer_size()) };
-                    let length = buffer.get_buffer_size();
-                    let (bytes_read, start_nonce, next_plot) = match p.read(&mut bs, length, scoop) {
+                    let mut_bs = &*buffer.get_buffer_for_writing();
+                    let mut bs = mut_bs.lock().unwrap();
+                    let (bytes_read, start_nonce, next_plot) = match p.read(&mut *bs, scoop) {
                         Ok(x) => x,
                         Err(e) => {
                             error!(

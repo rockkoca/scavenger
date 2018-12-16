@@ -39,7 +39,7 @@ pub struct Miner {
     request_handler: RequestHandler,
     rx_nonce_data: mpsc::Receiver<NonceData>,
     target_deadline: u64,
-    account_id_to_target_deadline : HashMap<u64,u64>,
+    account_id_to_target_deadline: HashMap<u64, u64>,
     state: Arc<Mutex<State>>,
     reader_task_count: usize,
     get_mining_info_interval: u64,
@@ -60,37 +60,34 @@ pub struct State {
 }
 
 pub trait Buffer {
-    fn get_buffer_for_writing(&mut self) -> *mut u8;
-    fn get_buffer_for_reading(&mut self) -> *mut u8;
-    fn get_buffer_size(&self) -> usize;
+    fn get_buffer_for_writing(&mut self) -> Arc<Mutex<Vec<u8>>>;
+    fn get_buffer_for_reading(&mut self) -> Arc<Mutex<Vec<u8>>>;
+    // fn get_buffer_size(&self) -> usize;
     #[cfg(feature = "opencl")]
     fn get_gpu_context(&self) -> Option<Arc<Mutex<GpuContext>>>;
     #[cfg(feature = "opencl")]
-    fn get_gpu_buffers(&mut self) ->  Option<&mut GpuBuffer>;
+    fn get_gpu_buffers(&mut self) -> Option<&mut GpuBuffer>;
 }
 
 pub struct CpuBuffer {
-    data: Vec<u8>,
+    data: Arc<Mutex<Vec<u8>>>,
 }
 
 impl CpuBuffer {
     fn new(buffer_size: usize) -> Self {
         let data = vec![1u8; buffer_size];
         CpuBuffer {
-            data: data,
+            data: Arc::new(Mutex::new(data)),
         }
     }
 }
 
 impl Buffer for CpuBuffer {
-    fn get_buffer_for_writing(&mut self) -> *mut u8 {
-        self.data.as_mut_ptr()
+    fn get_buffer_for_writing(&mut self) -> Arc<Mutex<Vec<u8>>> {
+        self.data.clone()
     }
-    fn get_buffer_for_reading(&mut self) -> *mut u8 {
-        self.data.as_mut_ptr()
-    }
-    fn get_buffer_size(&self) -> usize {
-        self.data.len()
+    fn get_buffer_for_reading(&mut self) -> Arc<Mutex<Vec<u8>>> {
+        self.data.clone()
     }
     #[cfg(feature = "opencl")]
     fn get_gpu_context(&self) -> Option<Arc<Mutex<GpuContext>>> {
@@ -283,7 +280,7 @@ impl Miner {
                 cfg.send_proxy_details,
             ),
             state: Arc::new(Mutex::new(State {
-                generation_signature : "".to_owned(),
+                generation_signature: "".to_owned(),
                 height: 0,
                 account_id_to_best_deadline: HashMap::new(),
                 base_target: 1,
@@ -380,7 +377,10 @@ impl Miner {
                         .account_id_to_best_deadline
                         .get(&nonce_data.account_id)
                         .unwrap_or(&u64::MAX);
-                    if best_deadline > deadline && deadline < *(account_id_to_target_deadline.get(&nonce_data.account_id).unwrap_or(&target_deadline)) {
+                    if best_deadline > deadline && deadline < *(account_id_to_target_deadline
+                        .get(&nonce_data.account_id)
+                        .unwrap_or(&target_deadline))
+                    {
                         state
                             .account_id_to_best_deadline
                             .insert(nonce_data.account_id, deadline);

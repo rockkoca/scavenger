@@ -146,9 +146,9 @@ impl Plot {
         self.fh.seek(SeekFrom::Start(seek_addr))
     }
 
-    pub fn read(&mut self, bs: &mut [u8], length: usize, scoop: u32) -> Result<(usize, u64, bool), io::Error> {
+    pub fn read(&mut self, bs: &mut Vec<u8>, scoop: u32) -> Result<(usize, u64, bool), io::Error> {
         let read_offset = self.read_offset;
-        let buffer_cap = length;
+        let buffer_cap = bs.capacity();
         let start_nonce = self.start_nonce + self.read_offset / 64;
 
         let (bytes_to_read, finished) = if read_offset as usize + buffer_cap
