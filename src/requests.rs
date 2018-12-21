@@ -172,7 +172,7 @@ impl RequestHandler {
             account_id, nonce, secret_phrase_encoded, height
         );
         // if pool mining also send the deadline (usefull for proxies)
-        if secret_phrase_encoded == "" {
+        if secret_phrase_encoded != "" {
             path += &format!("&deadline={}", d_unadjusted);
         }
 
