@@ -31,12 +31,12 @@ pub fn create_gpu_worker_task(
                 if read_reply.height == 1 {
                     drive_count = 0;
                     new_round = true;
-                 //   info!("START XCount{}", drive_count);
+                    //   info!("START XCount{}", drive_count);
                 }
                 if read_reply.height == 0 {
                     drive_count += 1;
                     if drive_count == num_drives {
-                      //  info!("FINAL XCount{}", drive_count);
+                        //  info!("FINAL XCount{}", drive_count);
                         if !new_round {
                             let result = gpu_hash(
                                 context_mu.clone(),
