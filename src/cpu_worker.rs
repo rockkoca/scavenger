@@ -71,121 +71,136 @@ cfg_if! {
 
 pub fn create_cpu_worker_task(
     benchmark: bool,
+    thread_pool: rayon::ThreadPool,
     rx_read_replies: chan::Receiver<ReadReply>,
     tx_empty_buffers: chan::Sender<Box<Buffer + Send>>,
     tx_nonce_data: mpsc::Sender<NonceData>,
 ) -> impl FnOnce() {
     move || {
         for read_reply in rx_read_replies {
-            let mut buffer = read_reply.buffer;
-            if read_reply.len == 0 {
-                tx_empty_buffers.send(buffer);
-                continue;
-            }
+            let task = hash(
+                read_reply,
+                tx_empty_buffers.clone(),
+                tx_nonce_data.clone(),
+                benchmark,
+            );
 
-            let mut deadline: u64 = u64::MAX;
-            let mut offset: u64 = 0;
-
-            if !benchmark {
-                {
-                    let mut_bs = buffer.get_buffer_for_writing();
-                    let mut bs = mut_bs.lock().unwrap();
-                    //todo wrong place for padding. reader should take care!, we should have mut here
-                    let padded = pad(&mut bs, read_reply.len, 8 * 64);
-                    #[cfg(feature = "simd")]
-                    unsafe {
-                        if is_x86_feature_detected!("avx512f") {
-                            find_best_deadline_avx512f(
-                                bs.as_ptr() as *mut c_void,
-                                (read_reply.len as u64 + padded as u64) / 64,
-                                read_reply.gensig.as_ptr() as *const c_void,
-                                &mut deadline,
-                                &mut offset,
-                            );
-                        } else if is_x86_feature_detected!("avx2") {
-                            find_best_deadline_avx2(
-                                bs.as_ptr() as *mut c_void,
-                                (read_reply.len as u64 + padded as u64) / 64,
-                                read_reply.gensig.as_ptr() as *const c_void,
-                                &mut deadline,
-                                &mut offset,
-                            );
-                        } else if is_x86_feature_detected!("avx") {
-                            find_best_deadline_avx(
-                                bs.as_ptr() as *mut c_void,
-                                (read_reply.len as u64 + padded as u64) / 64,
-                                read_reply.gensig.as_ptr() as *const c_void,
-                                &mut deadline,
-                                &mut offset,
-                            );
-                        } else if is_x86_feature_detected!("sse2") {
-                            find_best_deadline_sse2(
-                                bs.as_ptr() as *mut c_void,
-                                (read_reply.len as u64 + padded as u64) / 64,
-                                read_reply.gensig.as_ptr() as *const c_void,
-                                &mut deadline,
-                                &mut offset,
-                            );
-                        } else {
-                            find_best_deadline_sph(
-                                bs.as_ptr() as *mut c_void,
-                                (read_reply.len as u64 + padded as u64) / 64,
-                                read_reply.gensig.as_ptr() as *const c_void,
-                                &mut deadline,
-                                &mut offset,
-                            );
-                        }
-                    }
-                    #[cfg(feature = "neon")]
-                    unsafe {
-                        #[cfg(target_arch = "arm")]
-                        let neon = is_arm_feature_detected!("neon");
-                        #[cfg(target_arch = "aarch64")]
-                        let neon = true;
-                        if neon {
-                            find_best_deadline_neon(
-                                bs.as_ptr() as *mut c_void,
-                                (read_reply.len as u64 + padded as u64) / 64,
-                                read_reply.gensig.as_ptr() as *const c_void,
-                                &mut deadline,
-                                &mut offset,
-                            );
-                        } else {
-                            find_best_deadline_sph(
-                                bs.as_ptr() as *mut c_void,
-                                (read_reply.len as u64 + padded as u64) / 64,
-                                read_reply.gensig.as_ptr() as *const c_void,
-                                &mut deadline,
-                                &mut offset,
-                            );
-                        }
-                    }
-                    #[cfg(not(any(feature = "simd", feature = "neon")))]
-                    unsafe {
-                        find_best_deadline_sph(
-                            bs.as_ptr() as *mut c_void,
-                            (read_reply.len as u64 + padded as u64) / 64,
-                            read_reply.gensig.as_ptr() as *const c_void,
-                            &mut deadline,
-                            &mut offset,
-                        );
-                    }
-                }
-            }
-
-            tx_nonce_data
-                .clone()
-                .send(NonceData {
-                    height: read_reply.height,
-                    deadline,
-                    nonce: offset + read_reply.start_nonce,
-                    reader_task_processed: read_reply.finished,
-                    account_id: read_reply.account_id,
-                })
-                .wait()
-                .expect("failed to send nonce data");
-            tx_empty_buffers.send(buffer);
+            thread_pool.spawn(task);
         }
+    }
+}
+
+pub fn hash(
+    read_reply: ReadReply,
+    tx_empty_buffers: chan::Sender<Box<Buffer + Send>>,
+    tx_nonce_data: mpsc::Sender<NonceData>,
+    benchmark: bool,
+) -> impl FnOnce() {
+    move || {
+        let mut buffer = read_reply.buffer;
+        if read_reply.len == 0 || benchmark {
+            tx_empty_buffers.send(buffer);
+            return;
+        }
+
+        let mut deadline: u64 = u64::MAX;
+        let mut offset: u64 = 0;
+
+        let mut_bs = buffer.get_buffer_for_writing();
+        let mut bs = mut_bs.lock().unwrap();
+        //todo wrong place for padding. reader should take care!, we should have mut here
+        let padded = pad(&mut bs, read_reply.len, 8 * 64);
+        #[cfg(feature = "simd")]
+        unsafe {
+            if is_x86_feature_detected!("avx512f") {
+                find_best_deadline_avx512f(
+                    bs.as_ptr() as *mut c_void,
+                    (read_reply.len as u64 + padded as u64) / 64,
+                    read_reply.gensig.as_ptr() as *const c_void,
+                    &mut deadline,
+                    &mut offset,
+                );
+            } else if is_x86_feature_detected!("avx2") {
+                find_best_deadline_avx2(
+                    bs.as_ptr() as *mut c_void,
+                    (read_reply.len as u64 + padded as u64) / 64,
+                    read_reply.gensig.as_ptr() as *const c_void,
+                    &mut deadline,
+                    &mut offset,
+                );
+            } else if is_x86_feature_detected!("avx") {
+                find_best_deadline_avx(
+                    bs.as_ptr() as *mut c_void,
+                    (read_reply.len as u64 + padded as u64) / 64,
+                    read_reply.gensig.as_ptr() as *const c_void,
+                    &mut deadline,
+                    &mut offset,
+                );
+            } else if is_x86_feature_detected!("sse2") {
+                find_best_deadline_sse2(
+                    bs.as_ptr() as *mut c_void,
+                    (read_reply.len as u64 + padded as u64) / 64,
+                    read_reply.gensig.as_ptr() as *const c_void,
+                    &mut deadline,
+                    &mut offset,
+                );
+            } else {
+                find_best_deadline_sph(
+                    bs.as_ptr() as *mut c_void,
+                    (read_reply.len as u64 + padded as u64) / 64,
+                    read_reply.gensig.as_ptr() as *const c_void,
+                    &mut deadline,
+                    &mut offset,
+                );
+            }
+        }
+        #[cfg(feature = "neon")]
+        unsafe {
+            #[cfg(target_arch = "arm")]
+            let neon = is_arm_feature_detected!("neon");
+            #[cfg(target_arch = "aarch64")]
+            let neon = true;
+            if neon {
+                find_best_deadline_neon(
+                    bs.as_ptr() as *mut c_void,
+                    (read_reply.len as u64 + padded as u64) / 64,
+                    read_reply.gensig.as_ptr() as *const c_void,
+                    &mut deadline,
+                    &mut offset,
+                );
+            } else {
+                find_best_deadline_sph(
+                    bs.as_ptr() as *mut c_void,
+                    (read_reply.len as u64 + padded as u64) / 64,
+                    read_reply.gensig.as_ptr() as *const c_void,
+                    &mut deadline,
+                    &mut offset,
+                );
+            }
+        }
+        #[cfg(not(any(feature = "simd", feature = "neon")))]
+        unsafe {
+            find_best_deadline_sph(
+                bs.as_ptr() as *mut c_void,
+                (read_reply.len as u64 + padded as u64) / 64,
+                read_reply.gensig.as_ptr() as *const c_void,
+                &mut deadline,
+                &mut offset,
+            );
+        }
+
+        tx_nonce_data
+            .clone()
+            .send(NonceData {
+                height: read_reply.height,
+                deadline,
+                nonce: offset + read_reply.start_nonce,
+                reader_task_processed: read_reply.finished,
+                account_id: read_reply.account_id,
+            })
+            .wait()
+            .expect("failed to send nonce data");
+        tx_empty_buffers.send(buffer);
     }
 }
 

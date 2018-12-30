@@ -238,24 +238,30 @@ impl Miner {
         if cfg.cpu_thread_pinning {
             core_ids = core_affinity::get_core_ids().unwrap();
         }
-        for id in 0..cpu_worker_thread_count {
-            thread::spawn({
-                if cfg.cpu_thread_pinning {
-                    #[cfg(not(windows))]
-                    let core_id = core_ids[id % core_ids.len()];
-                    #[cfg(not(windows))]
-                    core_affinity::set_for_current(core_id);
-                    #[cfg(windows)]
-                    set_thread_ideal_processor(id % core_ids.len());
-                }
-                create_cpu_worker_task(
-                    cfg.benchmark_only.to_uppercase() == "I/O",
-                    rx_read_replies_cpu.clone(),
-                    tx_empty_buffers.clone(),
-                    tx_nonce_data.clone(),
-                )
-            });
-        }
+        let thread_pinning = cfg.cpu_thread_pinning;
+        // todo limit cpu usage
+        thread::spawn({
+            create_cpu_worker_task(
+                cfg.benchmark_only.to_uppercase() == "I/O",
+                rayon::ThreadPoolBuilder::new()
+                    .num_threads(core_ids.len())
+                    .start_handler(move |id| {
+                        if thread_pinning {
+                            #[cfg(not(windows))]
+                            let core_id = core_ids[id % core_ids.len()];
+                            #[cfg(not(windows))]
+                            core_affinity::set_for_current(core_id);
+                            #[cfg(windows)]
+                            set_thread_ideal_processor(id % core_ids.len());
+                        }
+                    })
+                    .build()
+                    .unwrap(),
+                rx_read_replies_cpu.clone(),
+                tx_empty_buffers.clone(),
+                tx_nonce_data.clone(),
+            )
+        });
 
         thread::spawn({
             create_gpu_worker_task(
@@ -410,16 +416,11 @@ impl Miner {
                             deadline,
                             0,
                         );
-                        /* tradeoff between non-verbosity and information: stopped informing about
-                           found deadlines, but reporting accepted deadlines instead.
-                        info!(
-                            "deadline captured: account={}, nonce={}, deadline={}",
-                            nonce_data.account_id, nonce_data.nonce, deadline
-                        );*/
                     }
                     if nonce_data.reader_task_processed {
                         state.processed_reader_tasks += 1;
                         if state.processed_reader_tasks == reader_task_count {
+                            // todo: trigger final hashing for gpu
                             info!(
                                 "{: <80}",
                                 format!(

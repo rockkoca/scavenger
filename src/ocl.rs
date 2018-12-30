@@ -12,7 +12,7 @@ use std::ffi::CString;
 
 use std::process;
 use std::sync::{Arc, Mutex};
-use std::u64;
+
 
 static SRC: &'static str = include_str!("ocl/kernel.cl");
 

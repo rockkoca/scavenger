@@ -20,13 +20,14 @@ pub fn create_gpu_worker_task(
         let mut last_buffer = None;
         let mut last_start_nonce = 0;
         let mut last_account_id = 0;
+        let mut last_nonces = 0;
         for read_reply in rx_read_replies {
             let mut buffer = read_reply.buffer;
             if read_reply.len == 0 || benchmark {
                 tx_empty_buffers.send(buffer);
                 continue;
             }
-          
+
             if *read_reply.gensig != gensig {
                 gensig = *read_reply.gensig;
                 new_round = true;
@@ -41,12 +42,13 @@ pub fn create_gpu_worker_task(
                 last_buffer = buffer.get_gpu_data();
                 last_start_nonce = read_reply.start_nonce;
                 last_account_id = read_reply.account_id;
+                last_nonces = read_reply.len / 64;
                 new_round = false;
             } else {
                 let result = gpu_transfer_and_hash(
                     context_mu.clone(),
                     buffer.get_gpu_buffers().unwrap(),
-                    read_reply.len / 64,
+                    last_nonces,
                     last_buffer.as_ref().unwrap(),
                 );
                 let deadline = result.0;
@@ -67,17 +69,18 @@ pub fn create_gpu_worker_task(
                 last_buffer = buffer.get_gpu_data();
                 last_start_nonce = read_reply.start_nonce;
                 last_account_id = read_reply.account_id;
+                last_nonces = read_reply.len / 64;
                 new_round = false;
             }
 
             if read_reply.finished {
-                    let result = gpu_hash(
-                        context_mu.clone(),
-                        read_reply.len / 64,
-                        last_buffer.as_ref().unwrap(),
-                    );
-                    let deadline = result.0;
-                    let offset = result.1;
+                let result = gpu_hash(
+                    context_mu.clone(),
+                    last_nonces,
+                    last_buffer.as_ref().unwrap(),
+                );
+                let deadline = result.0;
+                let offset = result.1;
 
                 tx_nonce_data
                     .clone()
