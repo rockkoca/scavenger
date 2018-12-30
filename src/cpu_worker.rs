@@ -88,7 +88,7 @@ pub fn create_cpu_worker_task(
 
             if !benchmark {
                 {
-                    let mut_bs = buffer.get_buffer_for_reading();
+                    let mut_bs = buffer.get_buffer_for_writing();
                     let mut bs = mut_bs.lock().unwrap();
                     //todo wrong place for padding. reader should take care!, we should have mut here
                     let padded = pad(&mut bs, read_reply.len, 8 * 64);
@@ -181,7 +181,8 @@ pub fn create_cpu_worker_task(
                     nonce: offset + read_reply.start_nonce,
                     reader_task_processed: read_reply.finished,
                     account_id: read_reply.account_id,
-                }).wait()
+                })
+                .wait()
                 .expect("failed to send nonce data");
             tx_empty_buffers.send(buffer);
         }

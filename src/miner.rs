@@ -8,7 +8,9 @@ use burstmath;
 use chan;
 use config::Cfg;
 use core_affinity;
+use cpu_worker::create_cpu_worker_task;
 use futures::sync::mpsc;
+use gpu_worker::create_gpu_worker_task;
 use plot::{Plot, SCOOP_SIZE};
 use reader::Reader;
 use requests::RequestHandler;
@@ -29,7 +31,6 @@ use tokio_core::reactor::Core;
 use utils::get_device_id;
 #[cfg(windows)]
 use utils::set_thread_ideal_processor;
-use worker::{create_worker_task, NonceData};
 
 #[cfg(feature = "opencl")]
 use ocl::GpuBuffer;
@@ -41,7 +42,7 @@ pub struct Miner {
     request_handler: RequestHandler,
     rx_nonce_data: mpsc::Receiver<NonceData>,
     target_deadline: u64,
-    account_id_to_target_deadline : HashMap<u64,u64>,
+    account_id_to_target_deadline: HashMap<u64, u64>,
     state: Arc<Mutex<State>>,
     reader_task_count: usize,
     get_mining_info_interval: u64,
@@ -61,14 +62,22 @@ pub struct State {
     processed_reader_tasks: usize,
 }
 
+pub struct NonceData {
+    pub height: u64,
+    pub deadline: u64,
+    pub nonce: u64,
+    pub reader_task_processed: bool,
+    pub account_id: u64,
+}
+
 pub trait Buffer {
     fn get_buffer(&mut self) -> Arc<Mutex<Vec<u8>>>;
-
     fn get_buffer_for_writing(&mut self) -> Arc<Mutex<Vec<u8>>>;
     #[cfg(feature = "opencl")]
-    fn get_gpu_context(&self) -> Option<Arc<Mutex<GpuContext>>>;
+    fn get_gpu_context(&self) -> Option<Arc<GpuContext>>;
     #[cfg(feature = "opencl")]
     fn get_gpu_buffers(&self) -> Option<&GpuBuffer>;
+    fn get_gpu_data(&self) -> Option<core::Mem>;
 }
 
 pub struct CpuBuffer {
@@ -99,11 +108,14 @@ impl Buffer for CpuBuffer {
         self.data.clone()
     }
     #[cfg(feature = "opencl")]
-    fn get_gpu_context(&self) -> Option<Arc<Mutex<GpuContext>>> {
+    fn get_gpu_context(&self) -> Option<Arc<GpuContext>> {
         None
     }
     #[cfg(feature = "opencl")]
     fn get_gpu_buffers(&self) -> Option<&GpuBuffer> {
+        None
+    }
+    fn get_gpu_data(&self) -> Option<core::Mem> {
         None
     }
 }
@@ -197,28 +209,21 @@ impl Miner {
         let (tx_read_replies_gpu, rx_read_replies_gpu) = chan::bounded(gpu_worker_thread_count * 2);
 
         #[cfg(feature = "opencl")]
-        let mut vec = Vec::new();
+        let context = Arc::new(GpuContext::new(
+            cfg.gpu_platform,
+            cfg.gpu_device,
+            cfg.gpu_nonces_per_cache,
+            if cfg.benchmark_only.to_uppercase() == "I/O" {
+                false
+            } else {
+                cfg.gpu_mem_mapping
+            },
+        ));
 
         #[cfg(feature = "opencl")]
-        for _ in 0..gpu_worker_thread_count {
-            vec.push(Arc::new(Mutex::new(GpuContext::new(
-                cfg.gpu_platform,
-                cfg.gpu_device,
-                cfg.gpu_nonces_per_cache,
-                if cfg.benchmark_only.to_uppercase() == "I/O" {
-                    false
-                } else {
-                    cfg.gpu_mem_mapping
-                },
-            ))));
-        }
-
-        #[cfg(feature = "opencl")]
-        for _ in 0..1 {
-            for i in 0..gpu_worker_thread_count {
-                let gpu_buffer = GpuBuffer::new(&vec[i]);
-                tx_empty_buffers.send(Box::new(gpu_buffer) as Box<Buffer + Send>);
-            }
+        for _ in 0..2 * gpu_worker_thread_count {
+            let gpu_buffer = GpuBuffer::new(&context.clone());
+            tx_empty_buffers.send(Box::new(gpu_buffer) as Box<Buffer + Send>);
         }
 
         for _ in 0..cpu_worker_thread_count * 2 {
@@ -243,7 +248,7 @@ impl Miner {
                     #[cfg(windows)]
                     set_thread_ideal_processor(id % core_ids.len());
                 }
-                create_worker_task(
+                create_cpu_worker_task(
                     cfg.benchmark_only.to_uppercase() == "I/O",
                     rx_read_replies_cpu.clone(),
                     tx_empty_buffers.clone(),
@@ -252,16 +257,15 @@ impl Miner {
             });
         }
 
-        for _ in 0..gpu_worker_thread_count {
-            thread::spawn({
-                create_worker_task(
-                    cfg.benchmark_only.to_uppercase() == "I/O",
-                    rx_read_replies_gpu.clone(),
-                    tx_empty_buffers.clone(),
-                    tx_nonce_data.clone(),
-                )
-            });
-        }
+        thread::spawn({
+            create_gpu_worker_task(
+                cfg.benchmark_only.to_uppercase() == "I/O",
+                rx_read_replies_gpu.clone(),
+                tx_empty_buffers.clone(),
+                tx_nonce_data.clone(),
+                context,
+            )
+        });
 
         let core = Core::new().unwrap();
         Miner {
@@ -289,7 +293,7 @@ impl Miner {
                 cfg.send_proxy_details,
             ),
             state: Arc::new(Mutex::new(State {
-                generation_signature : "".to_owned(),
+                generation_signature: "".to_owned(),
                 height: 0,
                 account_id_to_best_deadline: HashMap::new(),
                 base_target: 1,
@@ -319,7 +323,8 @@ impl Miner {
             Interval::new(
                 Instant::now(),
                 Duration::from_millis(get_mining_info_interval),
-            ).for_each(move |_| {
+            )
+            .for_each(move |_| {
                 let state = state.clone();
                 let reader = reader.clone();
                 request_handler.get_mining_info().then(move |mining_info| {
@@ -368,7 +373,8 @@ impl Miner {
                     }
                     future::ok(())
                 })
-            }).map_err(|e| panic!("interval errored: err={:?}", e)),
+            })
+            .map_err(|e| panic!("interval errored: err={:?}", e)),
         );
 
         let target_deadline = self.target_deadline;
@@ -386,7 +392,12 @@ impl Miner {
                         .account_id_to_best_deadline
                         .get(&nonce_data.account_id)
                         .unwrap_or(&u64::MAX);
-                    if best_deadline > deadline && deadline < *(account_id_to_target_deadline.get(&nonce_data.account_id).unwrap_or(&target_deadline)) {
+                    if best_deadline > deadline
+                        && deadline
+                            < *(account_id_to_target_deadline
+                                .get(&nonce_data.account_id)
+                                .unwrap_or(&target_deadline))
+                    {
                         state
                             .account_id_to_best_deadline
                             .insert(nonce_data.account_id, deadline);
@@ -400,7 +411,7 @@ impl Miner {
                             0,
                         );
                         /* tradeoff between non-verbosity and information: stopped informing about
-                           found deadlines, but reporting accepted deadlines instead.  
+                           found deadlines, but reporting accepted deadlines instead.
                         info!(
                             "deadline captured: account={}, nonce={}, deadline={}",
                             nonce_data.account_id, nonce_data.nonce, deadline
@@ -425,7 +436,8 @@ impl Miner {
                         }
                     }
                     Ok(())
-                }).map_err(|e| panic!("interval errored: err={:?}", e)),
+                })
+                .map_err(|e| panic!("interval errored: err={:?}", e)),
         );
 
         self.core.run(future::empty::<(), ()>()).unwrap();

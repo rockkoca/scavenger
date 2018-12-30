@@ -80,7 +80,8 @@ impl Reader {
                         #[cfg(windows)]
                         set_thread_ideal_processor(id % core_ids.len());
                     }
-                }).build()
+                })
+                .build()
                 .unwrap(),
             rx_empty_buffers,
             tx_read_replies_cpu,
@@ -131,7 +132,8 @@ impl Reader {
 
                 self.pool.spawn(task);
                 interupt
-            }).collect();
+            })
+            .collect();
     }
 
     pub fn wakeup(&mut self) {
@@ -258,6 +260,37 @@ impl Reader {
                         elapsed += sw.elapsed_ms();
                     }
 
+                    //todo send termination to gpu
+                    /*
+                    #[cfg(feature = "opencl")]
+                    let gpu_context = buffer.get_gpu_context();
+                    #[cfg(feature = "opencl")]
+                    match &gpu_context {
+                        None => {
+                            tx_read_replies_cpu.send(ReadReply {
+                                buffer,
+                                len: bytes_read,
+                                height,
+                                gensig: gensig.clone(),
+                                start_nonce,
+                                finished,
+                                account_id: p.account_id,
+                            });
+                        }
+                        Some(_context) => {
+                            tx_read_replies_gpu.send(ReadReply {
+                                buffer,
+                                len: bytes_read,
+                                height,
+                                gensig: gensig.clone(),
+                                start_nonce,
+                                finished,
+                                account_id: p.account_id,
+                            });
+                        }
+                    }
+                    */
+
                     if finished && show_drive_stats {
                         info!(
                             "{: <80}",
@@ -274,9 +307,11 @@ impl Reader {
                     }
                     if rx_interupt.try_recv() != Err(TryRecvError::Empty) {
                         break 'outer;
+                        // reset gpu
                     }
                 }
             }
+            // reset gpu
         })
     }
 }
@@ -297,7 +332,8 @@ pub fn check_overlap(drive_id_to_plots: &HashMap<String, Arc<Mutex<Vec<RwLock<Pl
                             let plot_a = l.write().unwrap();
                             let plot_b = j.write().unwrap();
                             plot_a.account_id == plot_b.account_id && plot_a.overlaps_with(&plot_b)
-                        }).count()
+                        })
+                        .count()
                         > 0
                 });
                 result |= dupes.count() > 0;
@@ -311,7 +347,8 @@ pub fn check_overlap(drive_id_to_plots: &HashMap<String, Arc<Mutex<Vec<RwLock<Pl
                             let plot_a = l.write().unwrap();
                             let plot_b = j.write().unwrap();
                             plot_a.account_id == plot_b.account_id && plot_a.overlaps_with(&plot_b)
-                        }).count()
+                        })
+                        .count()
                         > 0
                 });
                 result |= dupes.count() > 0;

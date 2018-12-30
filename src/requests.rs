@@ -172,7 +172,7 @@ impl RequestHandler {
             account_id, nonce, secret_phrase_encoded, height
         );
         // if pool mining also send the deadline (usefull for proxies)
-        if secret_phrase_encoded != "" {
+        if secret_phrase_encoded == "" {
             path += &format!("&deadline={}", d_unadjusted);
         }
 
@@ -242,11 +242,13 @@ impl RequestHandler {
                 .header(
                     "X-Minername",
                     hostname::get_hostname().unwrap_or("".to_owned()),
-                ).header(
+                )
+                .header(
                     "X-Plotfile",
                     "ScavengerProxy/".to_owned()
                         + &*hostname::get_hostname().unwrap_or("".to_owned()),
-                ).body(hyper::Body::empty())
+                )
+                .body(hyper::Body::empty())
                 .unwrap()
         } else {
             Request::post(self.uri_for(path))
@@ -275,7 +277,8 @@ impl RequestHandler {
             .and_then(|body| {
                 let res = parse_json_result(&body)?;
                 Ok(res)
-            }).from_err();
+            })
+            .from_err();
 
         let timeout = Timeout::new(self.timeout, &self.handle).unwrap();
         let timeout = timeout
