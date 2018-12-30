@@ -1,8 +1,6 @@
-extern crate aligned_alloc;
 extern crate num_cpus;
 #[cfg(feature = "opencl")]
 extern crate ocl_core as core;
-extern crate page_size;
 
 use burstmath;
 use chan;
@@ -73,6 +71,7 @@ pub struct NonceData {
 pub trait Buffer {
     fn get_buffer(&mut self) -> Arc<Mutex<Vec<u8>>>;
     fn get_buffer_for_writing(&mut self) -> Arc<Mutex<Vec<u8>>>;
+    // fn get_buffer_size(&self) -> usize;
     #[cfg(feature = "opencl")]
     fn get_gpu_context(&self) -> Option<Arc<GpuContext>>;
     #[cfg(feature = "opencl")]
@@ -85,15 +84,8 @@ pub struct CpuBuffer {
 }
 
 impl CpuBuffer {
-    fn new(buffer_size: usize) -> Self
-    where
-        Self: Sized,
-    {
-        let pointer = aligned_alloc::aligned_alloc(buffer_size, page_size::get());
-        let data: Vec<u8>;
-        unsafe {
-            data = Vec::from_raw_parts(pointer as *mut u8, buffer_size, buffer_size);
-        }
+    fn new(buffer_size: usize) -> Self {
+        let data = vec![1u8; buffer_size];
         CpuBuffer {
             data: Arc::new(Mutex::new(data)),
         }
