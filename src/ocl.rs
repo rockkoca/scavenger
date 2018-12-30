@@ -1,7 +1,6 @@
 extern crate aligned_alloc;
 extern crate ocl_core as core;
 extern crate page_size;
-
 use self::core::{
     ArgVal, ContextProperties, DeviceInfo, Event, KernelWorkGroupInfo, PlatformInfo, Status,
 };
@@ -9,10 +8,8 @@ use self::core::{
 use config::Cfg;
 use miner::Buffer;
 use std::ffi::CString;
-
 use std::process;
 use std::sync::{Arc, Mutex};
-
 
 static SRC: &'static str = include_str!("ocl/kernel.cl");
 
@@ -140,84 +137,6 @@ pub struct GpuBuffer {
     memmap: Option<Arc<core::MemMap<u8>>>,
 }
 
-impl GpuBuffer {
-    pub fn new(context: &Arc<GpuContext>) -> Self
-    where
-        Self: Sized,
-    {
-        //let context = context_mu.lock().unwrap();
-
-        let pointer = aligned_alloc::aligned_alloc(&context.gdim1[0] * 64, page_size::get());
-        let data: Vec<u8>;
-        unsafe {
-            data = Vec::from_raw_parts(
-                pointer as *mut u8,
-                &context.gdim1[0] * 64,
-                &context.gdim1[0] * 64,
-            );
-        }
-
-        let data_gpu = unsafe {
-            core::create_buffer(
-                &context.context,
-                core::MEM_READ_ONLY | core::MEM_USE_HOST_PTR,
-                context.gdim1[0] * 64,
-                Some(&data),
-            )
-            .unwrap()
-        };
-
-        GpuBuffer {
-            data: Arc::new(Mutex::new(data)),
-            context: context.clone(),
-            data_gpu,
-            memmap: None,
-        }
-    }
-}
-
-impl Buffer for GpuBuffer {
-    fn get_buffer_for_writing(&mut self) -> Arc<Mutex<Vec<u8>>> {
-        // pointer is cached, however, calling enqueue map to make DMA work.
-        if self.context.mapping {
-            unsafe {
-                self.memmap = Some(Arc::new(
-                    core::enqueue_map_buffer::<u8, _, _, _>(
-                        &(*self.context).queue_b,
-                        &self.data_gpu,
-                        true,
-                        core::MAP_WRITE,
-                        0,
-                        &(*self.context).gdim1[0] * 64,
-                        None::<Event>,
-                        None::<&mut Event>,
-                    )
-                    .unwrap(),
-                ));
-            }
-        }
-        self.data.clone()
-    }
-
-    fn get_buffer(&mut self) -> Arc<Mutex<Vec<u8>>> {
-        self.data.clone()
-    }
-
-    fn get_gpu_context(&self) -> Option<Arc<GpuContext>> {
-        Some(self.context.clone())
-    }
-    fn get_gpu_buffers(&self) -> Option<&GpuBuffer> {
-        Some(self)
-    }
-    fn get_gpu_data(&self) -> Option<core::Mem> {
-        Some(self.data_gpu.clone())
-    }
-}
-
-// Ohne Gummi im Bahnhofsviertel... das wird noch Konsequenzen haben
-unsafe impl Sync for GpuContext {}
-unsafe impl Send for GpuBuffer {}
-
 impl GpuContext {
     pub fn new(
         gpu_platform: usize,
@@ -296,6 +215,84 @@ impl GpuContext {
         }
     }
 }
+
+impl GpuBuffer {
+    pub fn new(context: &Arc<GpuContext>) -> Self
+    where
+        Self: Sized,
+    {
+        //let context = context_mu.lock().unwrap();
+
+        let pointer = aligned_alloc::aligned_alloc(&context.gdim1[0] * 64, page_size::get());
+        let data: Vec<u8>;
+        unsafe {
+            data = Vec::from_raw_parts(
+                pointer as *mut u8,
+                &context.gdim1[0] * 64,
+                &context.gdim1[0] * 64,
+            );
+        }
+
+        let data_gpu = unsafe {
+            core::create_buffer(
+                &context.context,
+                core::MEM_READ_ONLY | core::MEM_USE_HOST_PTR,
+                context.gdim1[0] * 64,
+                Some(&data),
+            )
+            .unwrap()
+        };
+
+        GpuBuffer {
+            data: Arc::new(Mutex::new(data)),
+            context: context.clone(),
+            data_gpu,
+            memmap: None,
+        }
+    }
+}
+
+impl Buffer for GpuBuffer {
+    fn get_buffer_for_writing(&mut self) -> Arc<Mutex<Vec<u8>>> {
+        // pointer is cached, however, calling enqueue map to make DMA work.
+        if self.context.mapping {
+            unsafe {
+                self.memmap = Some(Arc::new(
+                    core::enqueue_map_buffer::<u8, _, _, _>(
+                        &(*self.context).queue_b,
+                        &self.data_gpu,
+                        true,
+                        core::MAP_WRITE,
+                        0,
+                        &(*self.context).gdim1[0] * 64,
+                        None::<Event>,
+                        None::<&mut Event>,
+                    )
+                    .unwrap(),
+                ));
+            }
+        }
+        self.data.clone()
+    }
+
+    fn get_buffer(&mut self) -> Arc<Mutex<Vec<u8>>> {
+        self.data.clone()
+    }
+
+    fn get_gpu_context(&self) -> Option<Arc<GpuContext>> {
+        Some(self.context.clone())
+    }
+    fn get_gpu_buffers(&self) -> Option<&GpuBuffer> {
+        Some(self)
+    }
+    fn get_gpu_data(&self) -> Option<core::Mem> {
+        Some(self.data_gpu.clone())
+    }
+}
+
+// Ohne Gummi im Bahnhofsviertel... das wird noch Konsequenzen haben
+unsafe impl Sync for GpuContext {}
+unsafe impl Send for GpuBuffer {}
 
 pub fn gpu_transfer(gpu_context: Arc<GpuContext>, buffer: &GpuBuffer, gensig: [u8; 32]) {
     unsafe {

@@ -104,6 +104,19 @@ impl Reader {
         pb.message("Scavenging: ");
         let pb = Arc::new(Mutex::new(pb));
 
+        // send start signal (dummy buffer) to gpu
+
+        #[cfg(feature = "opencl")]
+        self.tx_read_replies_gpu.send(ReadReply {
+            buffer: self.rx_empty_buffers.recv().unwrap(),
+            len: 0,
+            height: 1,
+            gensig: gensig.clone(),
+            start_nonce: 0,
+            finished: true,
+            account_id: 0,
+        });
+
         self.interupts = self
             .drive_id_to_plots
             .iter()
@@ -260,36 +273,19 @@ impl Reader {
                         elapsed += sw.elapsed_ms();
                     }
 
-                    //todo send termination to gpu
-                    /*
-                    #[cfg(feature = "opencl")]
-                    let gpu_context = buffer.get_gpu_context();
-                    #[cfg(feature = "opencl")]
-                    match &gpu_context {
-                        None => {
-                            tx_read_replies_cpu.send(ReadReply {
-                                buffer,
-                                len: bytes_read,
-                                height,
-                                gensig: gensig.clone(),
-                                start_nonce,
-                                finished,
-                                account_id: p.account_id,
-                            });
-                        }
-                        Some(_context) => {
-                            tx_read_replies_gpu.send(ReadReply {
-                                buffer,
-                                len: bytes_read,
-                                height,
-                                gensig: gensig.clone(),
-                                start_nonce,
-                                finished,
-                                account_id: p.account_id,
-                            });
-                        }
+                    // send termination signal (dummy buffer) to gpu
+                    if finished {
+                        #[cfg(feature = "opencl")]
+                        tx_read_replies_gpu.send(ReadReply {
+                            buffer: rx_empty_buffers.recv().unwrap(),
+                            len: 0,
+                            height: 0,
+                            gensig: gensig.clone(),
+                            start_nonce: 0,
+                            finished: true,
+                            account_id: 0,
+                        });
                     }
-                    */
 
                     if finished && show_drive_stats {
                         info!(
