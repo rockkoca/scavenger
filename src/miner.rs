@@ -215,12 +215,16 @@ impl Miner {
         #[cfg(feature = "opencl")]
         for _ in 0..2 * gpu_worker_thread_count {
             let gpu_buffer = GpuBuffer::new(&context.clone());
-            tx_empty_buffers.send(Box::new(gpu_buffer) as Box<Buffer + Send>);
+            tx_empty_buffers
+                .send(Box::new(gpu_buffer) as Box<Buffer + Send>)
+                .unwrap();
         }
 
         for _ in 0..cpu_worker_thread_count * 2 {
             let cpu_buffer = CpuBuffer::new(buffer_size_cpu);
-            tx_empty_buffers.send(Box::new(cpu_buffer) as Box<Buffer + Send>);
+            tx_empty_buffers
+                .send(Box::new(cpu_buffer) as Box<Buffer + Send>)
+                .unwrap();
         }
 
         let (tx_nonce_data, rx_nonce_data) =

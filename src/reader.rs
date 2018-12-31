@@ -107,15 +107,17 @@ impl Reader {
         // send start signal (dummy buffer) to gpu
 
         #[cfg(feature = "opencl")]
-        self.tx_read_replies_gpu.send(ReadReply {
-            buffer: self.rx_empty_buffers.recv().unwrap(),
-            len: 0,
-            height: 1,
-            gensig: gensig.clone(),
-            start_nonce: 0,
-            finished: true,
-            account_id: 0,
-        });
+        self.tx_read_replies_gpu
+            .send(ReadReply {
+                buffer: self.rx_empty_buffers.recv().unwrap(),
+                len: 0,
+                height: 1,
+                gensig: gensig.clone(),
+                start_nonce: 0,
+                finished: true,
+                account_id: 0,
+            })
+            .unwrap();
 
         self.interupts = self
             .drive_id_to_plots
@@ -226,26 +228,30 @@ impl Reader {
                     #[cfg(feature = "opencl")]
                     match &gpu_context {
                         None => {
-                            tx_read_replies_cpu.send(ReadReply {
-                                buffer,
-                                len: bytes_read,
-                                height,
-                                gensig: gensig.clone(),
-                                start_nonce,
-                                finished,
-                                account_id: p.account_id,
-                            });
+                            tx_read_replies_cpu
+                                .send(ReadReply {
+                                    buffer,
+                                    len: bytes_read,
+                                    height,
+                                    gensig: gensig.clone(),
+                                    start_nonce,
+                                    finished,
+                                    account_id: p.account_id,
+                                })
+                                .unwrap();
                         }
                         Some(_context) => {
-                            tx_read_replies_gpu.send(ReadReply {
-                                buffer,
-                                len: bytes_read,
-                                height,
-                                gensig: gensig.clone(),
-                                start_nonce,
-                                finished,
-                                account_id: p.account_id,
-                            });
+                            tx_read_replies_gpu
+                                .send(ReadReply {
+                                    buffer,
+                                    len: bytes_read,
+                                    height,
+                                    gensig: gensig.clone(),
+                                    start_nonce,
+                                    finished,
+                                    account_id: p.account_id,
+                                })
+                                .unwrap();
                         }
                     }
                     #[cfg(not(feature = "opencl"))]
@@ -276,15 +282,17 @@ impl Reader {
                     // send termination signal (dummy buffer) to gpu
                     if finished {
                         #[cfg(feature = "opencl")]
-                        tx_read_replies_gpu.send(ReadReply {
-                            buffer: rx_empty_buffers.recv().unwrap(),
-                            len: 0,
-                            height: 0,
-                            gensig: gensig.clone(),
-                            start_nonce: 0,
-                            finished: true,
-                            account_id: 0,
-                        });
+                        tx_read_replies_gpu
+                            .send(ReadReply {
+                                buffer: rx_empty_buffers.recv().unwrap(),
+                                len: 0,
+                                height: 0,
+                                gensig: gensig.clone(),
+                                start_nonce: 0,
+                                finished: true,
+                                account_id: 0,
+                            })
+                            .unwrap();
                     }
 
                     if finished && show_drive_stats {

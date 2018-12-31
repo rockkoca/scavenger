@@ -99,7 +99,7 @@ pub fn hash(
     move || {
         let mut buffer = read_reply.buffer;
         if read_reply.len == 0 || benchmark {
-            tx_empty_buffers.send(buffer);
+            tx_empty_buffers.send(buffer).unwrap();
             return;
         }
 
@@ -200,7 +200,7 @@ pub fn hash(
             })
             .wait()
             .expect("failed to send nonce data");
-        tx_empty_buffers.send(buffer);
+        tx_empty_buffers.send(buffer).unwrap();
     }
 }
 

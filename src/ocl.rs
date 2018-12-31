@@ -349,7 +349,8 @@ impl Buffer for GpuBuffer {
                         (SCOOP_SIZE as usize) * self.context.gdim1[0],
                         None::<Event>,
                         None::<&mut Event>,
-                    ).unwrap(),
+                    )
+                    .unwrap(),
                 );
             }
         }
@@ -427,7 +428,7 @@ pub fn gpu_transfer_and_hash(
 
     // transfer
     if gpu_context.mapping {
-           let temp2 = buffer.buffer_ptr_host.as_ref().unwrap();
+        let temp2 = buffer.buffer_ptr_host.as_ref().unwrap();
         core::enqueue_unmap_mem_object(
             &gpu_context.queue_b,
             &buffer.data_gpu,

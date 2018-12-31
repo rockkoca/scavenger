@@ -61,7 +61,7 @@ pub fn create_gpu_worker_task(
                     }
                 }
 
-                tx_empty_buffers.send(buffer);
+                tx_empty_buffers.send(buffer).unwrap();
                 continue;
             }
 
@@ -113,7 +113,7 @@ pub fn create_gpu_worker_task(
                 new_round = false;
             }
 
-            tx_empty_buffers.send(buffer);
+            tx_empty_buffers.send(buffer).unwrap();
         }
     }
 }
