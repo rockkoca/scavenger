@@ -17,14 +17,17 @@ use stopwatch::Stopwatch;
 #[cfg(windows)]
 use utils::set_thread_ideal_processor;
 
-pub struct ReadReply {
-    pub buffer: Box<Buffer + Send>,
+pub struct BufferInfo {
     pub len: usize,
     pub height: u64,
     pub gensig: Arc<[u8; 32]>,
     pub start_nonce: u64,
     pub finished: bool,
     pub account_id: u64,
+}
+pub struct ReadReply {
+    pub buffer: Box<Buffer + Send>,
+    pub info: BufferInfo,
 }
 
 pub struct Reader {
@@ -105,17 +108,19 @@ impl Reader {
         let pb = Arc::new(Mutex::new(pb));
 
         // send start signal (dummy buffer) to gpu
-
         #[cfg(feature = "opencl")]
         self.tx_read_replies_gpu
             .send(ReadReply {
                 buffer: self.rx_empty_buffers.recv().unwrap(),
-                len: 0,
-                height: 1,
-                gensig: gensig.clone(),
-                start_nonce: 0,
-                finished: true,
-                account_id: 0,
+
+                info: BufferInfo {
+                    len: 0,
+                    height: 1,
+                    gensig: gensig.clone(),
+                    start_nonce: 0,
+                    finished: true,
+                    account_id: 0,
+                },
             })
             .unwrap();
 
@@ -231,12 +236,15 @@ impl Reader {
                             tx_read_replies_cpu
                                 .send(ReadReply {
                                     buffer,
-                                    len: bytes_read,
-                                    height,
-                                    gensig: gensig.clone(),
-                                    start_nonce,
-                                    finished,
-                                    account_id: p.account_id,
+
+                                    info: BufferInfo {
+                                        len: bytes_read,
+                                        height,
+                                        gensig: gensig.clone(),
+                                        start_nonce,
+                                        finished,
+                                        account_id: p.account_id,
+                                    },
                                 })
                                 .unwrap();
                         }
@@ -244,12 +252,15 @@ impl Reader {
                             tx_read_replies_gpu
                                 .send(ReadReply {
                                     buffer,
-                                    len: bytes_read,
-                                    height,
-                                    gensig: gensig.clone(),
-                                    start_nonce,
-                                    finished,
-                                    account_id: p.account_id,
+
+                                    info: BufferInfo {
+                                        len: bytes_read,
+                                        height,
+                                        gensig: gensig.clone(),
+                                        start_nonce,
+                                        finished,
+                                        account_id: p.account_id,
+                                    },
                                 })
                                 .unwrap();
                         }
@@ -285,12 +296,14 @@ impl Reader {
                         tx_read_replies_gpu
                             .send(ReadReply {
                                 buffer: rx_empty_buffers.recv().unwrap(),
-                                len: 0,
-                                height: 0,
-                                gensig: gensig.clone(),
-                                start_nonce: 0,
-                                finished: true,
-                                account_id: 0,
+                                info: BufferInfo {
+                                    len: 0,
+                                    height: 0,
+                                    gensig: gensig.clone(),
+                                    start_nonce: 0,
+                                    finished: true,
+                                    account_id: 0,
+                                },
                             })
                             .unwrap();
                     }

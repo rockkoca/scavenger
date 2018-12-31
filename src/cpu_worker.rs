@@ -98,7 +98,7 @@ pub fn hash(
 ) -> impl FnOnce() {
     move || {
         let mut buffer = read_reply.buffer;
-        if read_reply.len == 0 || benchmark {
+        if read_reply.info.len == 0 || benchmark {
             tx_empty_buffers.send(buffer).unwrap();
             return;
         }
@@ -109,46 +109,46 @@ pub fn hash(
         let mut_bs = buffer.get_buffer_for_writing();
         let mut bs = mut_bs.lock().unwrap();
         // todo wrong place for padding. reader should take care of padding, we shouldn't need mut here
-        let padded = pad(&mut bs, read_reply.len, 8 * 64);
+        let padded = pad(&mut bs, read_reply.info.len, 8 * 64);
         #[cfg(feature = "simd")]
         unsafe {
             if is_x86_feature_detected!("avx512f") {
                 find_best_deadline_avx512f(
                     bs.as_ptr() as *mut c_void,
-                    (read_reply.len as u64 + padded as u64) / 64,
-                    read_reply.gensig.as_ptr() as *const c_void,
+                    (read_reply.info.len as u64 + padded as u64) / 64,
+                    read_reply.info.gensig.as_ptr() as *const c_void,
                     &mut deadline,
                     &mut offset,
                 );
             } else if is_x86_feature_detected!("avx2") {
                 find_best_deadline_avx2(
                     bs.as_ptr() as *mut c_void,
-                    (read_reply.len as u64 + padded as u64) / 64,
-                    read_reply.gensig.as_ptr() as *const c_void,
+                    (read_reply.info.len as u64 + padded as u64) / 64,
+                    read_reply.info.gensig.as_ptr() as *const c_void,
                     &mut deadline,
                     &mut offset,
                 );
             } else if is_x86_feature_detected!("avx") {
                 find_best_deadline_avx(
                     bs.as_ptr() as *mut c_void,
-                    (read_reply.len as u64 + padded as u64) / 64,
-                    read_reply.gensig.as_ptr() as *const c_void,
+                    (read_reply.info.len as u64 + padded as u64) / 64,
+                    read_reply.info.gensig.as_ptr() as *const c_void,
                     &mut deadline,
                     &mut offset,
                 );
             } else if is_x86_feature_detected!("sse2") {
                 find_best_deadline_sse2(
                     bs.as_ptr() as *mut c_void,
-                    (read_reply.len as u64 + padded as u64) / 64,
-                    read_reply.gensig.as_ptr() as *const c_void,
+                    (read_reply.info.len as u64 + padded as u64) / 64,
+                    read_reply.info.gensig.as_ptr() as *const c_void,
                     &mut deadline,
                     &mut offset,
                 );
             } else {
                 find_best_deadline_sph(
                     bs.as_ptr() as *mut c_void,
-                    (read_reply.len as u64 + padded as u64) / 64,
-                    read_reply.gensig.as_ptr() as *const c_void,
+                    (read_reply.info.len as u64 + padded as u64) / 64,
+                    read_reply.info.gensig.as_ptr() as *const c_void,
                     &mut deadline,
                     &mut offset,
                 );
@@ -192,11 +192,11 @@ pub fn hash(
         tx_nonce_data
             .clone()
             .send(NonceData {
-                height: read_reply.height,
+                height: read_reply.info.height,
                 deadline,
-                nonce: offset + read_reply.start_nonce,
-                reader_task_processed: read_reply.finished,
-                account_id: read_reply.account_id,
+                nonce: offset + read_reply.info.start_nonce,
+                reader_task_processed: read_reply.info.finished,
+                account_id: read_reply.info.account_id,
             })
             .wait()
             .expect("failed to send nonce data");

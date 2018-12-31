@@ -4,7 +4,7 @@ use futures::{Future, Sink};
 use miner::{Buffer, NonceData};
 use ocl::GpuContext;
 use ocl::{gpu_hash, gpu_transfer, gpu_transfer_and_hash};
-use reader::ReadReply;
+use reader::{BufferInfo, ReadReply};
 use std::sync::Arc;
 
 pub fn create_gpu_worker_task(
@@ -16,32 +16,49 @@ pub fn create_gpu_worker_task(
     num_drives: usize,
 ) -> impl FnOnce() {
     move || {
-        let mut gensig = [0u8; 32];
         let mut new_round = true;
-        let mut last_buffer = None;
-        let mut last_start_nonce = 0;
-        let mut last_account_id = 0;
-        let mut last_nonces = 0;
-        let mut last_height = 0;
-        let mut last_finished = false;
+        let mut last_buffer_a = None;
+        let mut last_buffer_info_a = BufferInfo {
+            len: 0,
+            height: 0,
+            gensig: Arc::new([0u8; 32]),
+            start_nonce: 0,
+            finished: false,
+            account_id: 0,
+        };
+
         let mut drive_count = 0;
+        //let mut last_dual = false;
+
         for read_reply in rx_read_replies {
             let mut buffer = read_reply.buffer;
-            if read_reply.len == 0 || benchmark {
-                if read_reply.height == 1 {
+            /*
+            // todo try to get second buffer if in dual copy mode
+            match rx_interupt.try_recv() {
+                OK() -> {
+
+                }
+                Err(_) -> {
+
+                    }
+            }
+            */
+
+            if read_reply.info.len == 0 || benchmark {
+                if read_reply.info.height == 1 {
                     drive_count = 0;
                     new_round = true;
                     //   info!("START XCount{}", drive_count);
                 }
-                if read_reply.height == 0 {
+                if read_reply.info.height == 0 {
                     drive_count += 1;
                     if drive_count == num_drives {
                         //  info!("FINAL XCount{}", drive_count);
                         if !new_round {
                             let result = gpu_hash(
                                 context_mu.clone(),
-                                last_nonces,
-                                last_buffer.as_ref().unwrap(),
+                                last_buffer_info_a.len / 64,
+                                last_buffer_a.as_ref().unwrap(),
                             );
                             let deadline = result.0;
                             let offset = result.1;
@@ -49,11 +66,11 @@ pub fn create_gpu_worker_task(
                             tx_nonce_data
                                 .clone()
                                 .send(NonceData {
-                                    height: last_height,
+                                    height: last_buffer_info_a.height,
                                     deadline,
-                                    nonce: offset + last_start_nonce,
-                                    reader_task_processed: last_finished,
-                                    account_id: last_account_id,
+                                    nonce: offset + last_buffer_info_a.start_nonce,
+                                    reader_task_processed: last_buffer_info_a.finished,
+                                    account_id: last_buffer_info_a.account_id,
                                 })
                                 .wait()
                                 .expect("failed to send nonce data");
@@ -65,9 +82,7 @@ pub fn create_gpu_worker_task(
                 continue;
             }
 
-            if *read_reply.gensig != gensig {
-                gensig = *read_reply.gensig;
-                last_height = read_reply.height;
+            if *read_reply.info.gensig != *last_buffer_info_a.gensig {
                 new_round = true;
             }
 
@@ -75,20 +90,18 @@ pub fn create_gpu_worker_task(
                 gpu_transfer(
                     context_mu.clone(),
                     buffer.get_gpu_buffers().unwrap(),
-                    *read_reply.gensig,
+                    *read_reply.info.gensig,
                 );
-                last_buffer = buffer.get_gpu_data();
-                last_start_nonce = read_reply.start_nonce;
-                last_account_id = read_reply.account_id;
-                last_nonces = read_reply.len / 64;
-                last_finished = read_reply.finished;
+                last_buffer_a = buffer.get_gpu_data();
+                last_buffer_info_a = read_reply.info;
+
                 new_round = false;
             } else {
                 let result = gpu_transfer_and_hash(
                     context_mu.clone(),
                     buffer.get_gpu_buffers().unwrap(),
-                    last_nonces,
-                    last_buffer.as_ref().unwrap(),
+                    last_buffer_info_a.len / 64,
+                    last_buffer_a.as_ref().unwrap(),
                 );
                 let deadline = result.0;
                 let offset = result.1;
@@ -96,24 +109,21 @@ pub fn create_gpu_worker_task(
                 tx_nonce_data
                     .clone()
                     .send(NonceData {
-                        height: read_reply.height,
+                        height: read_reply.info.height,
                         deadline,
-                        nonce: offset + last_start_nonce,
-                        reader_task_processed: last_finished,
-                        account_id: last_account_id,
+                        nonce: offset + last_buffer_info_a.start_nonce,
+                        reader_task_processed: last_buffer_info_a.finished,
+                        account_id: last_buffer_info_a.account_id,
                     })
                     .wait()
                     .expect("failed to send nonce data");
-
-                last_buffer = buffer.get_gpu_data();
-                last_start_nonce = read_reply.start_nonce;
-                last_account_id = read_reply.account_id;
-                last_nonces = read_reply.len / 64;
-                last_finished = read_reply.finished;
+                last_buffer_a = buffer.get_gpu_data();
+                last_buffer_info_a = read_reply.info;
                 new_round = false;
             }
 
             tx_empty_buffers.send(buffer).unwrap();
+            // send second buffer if any
         }
     }
 }
