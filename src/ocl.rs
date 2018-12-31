@@ -1,6 +1,4 @@
-extern crate aligned_alloc;
 extern crate ocl_core as core;
-extern crate page_size;
 use self::core::{
     ArgVal, ContextProperties, DeviceInfo, Event, KernelWorkGroupInfo, PlatformInfo, Status,
 };

@@ -108,7 +108,7 @@ pub fn hash(
 
         let mut_bs = buffer.get_buffer_for_writing();
         let mut bs = mut_bs.lock().unwrap();
-        //todo wrong place for padding. reader should take care!, we should have mut here
+        // todo wrong place for padding. reader should take care of padding, we shouldn't need mut here
         let padded = pad(&mut bs, read_reply.len, 8 * 64);
         #[cfg(feature = "simd")]
         unsafe {
