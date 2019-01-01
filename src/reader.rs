@@ -61,7 +61,7 @@ impl Reader {
                 -FileTime::from_last_modification_time(&m).unix_seconds()
             });
         }
-        
+
         check_overlap(&drive_id_to_plots);
 
         let mut core_ids: Vec<core_affinity::CoreId> = Vec::new();
