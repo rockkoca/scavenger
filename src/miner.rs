@@ -8,7 +8,14 @@ use config::Cfg;
 use core_affinity;
 use cpu_worker::create_cpu_worker_task;
 use futures::sync::mpsc;
+#[cfg(feature = "opencl")]
 use gpu_worker::create_gpu_worker_task;
+#[cfg(feature = "opencl")]
+use gpu_worker_dual::create_gpu_worker_dual_task;
+#[cfg(feature = "opencl")]
+use ocl::GpuBuffer;
+#[cfg(feature = "opencl")]
+use ocl::GpuContext;
 use plot::{Plot, SCOOP_SIZE};
 use reader::Reader;
 use requests::RequestHandler;
@@ -29,11 +36,6 @@ use tokio_core::reactor::Core;
 use utils::get_device_id;
 #[cfg(windows)]
 use utils::set_thread_ideal_processor;
-
-#[cfg(feature = "opencl")]
-use ocl::GpuBuffer;
-#[cfg(feature = "opencl")]
-use ocl::GpuContext;
 
 pub struct Miner {
     reader: Reader,
@@ -213,7 +215,15 @@ impl Miner {
         ));
 
         #[cfg(feature = "opencl")]
-        for _ in 0..2 * gpu_worker_thread_count {
+        let gpu_num_buffers = if gpu_worker_thread_count > 0 {
+            // todo if dual + 2
+            gpu_worker_thread_count + 1
+        } else {
+            0
+        };
+
+        #[cfg(feature = "opencl")]
+        for _ in 0..gpu_num_buffers {
             let gpu_buffer = GpuBuffer::new(&context.clone());
             tx_empty_buffers
                 .send(Box::new(gpu_buffer) as Box<Buffer + Send>)
@@ -259,16 +269,29 @@ impl Miner {
             )
         });
 
-        thread::spawn({
-            create_gpu_worker_task(
-                cfg.benchmark_only.to_uppercase() == "I/O",
-                rx_read_replies_gpu.clone(),
-                tx_empty_buffers.clone(),
-                tx_nonce_data.clone(),
-                context,
-                drive_id_to_plots.len(),
-            )
-        });
+        if cfg.gpu_dual_copy_engines {
+            thread::spawn({
+                create_gpu_worker_dual_task(
+                    cfg.benchmark_only.to_uppercase() == "I/O",
+                    rx_read_replies_gpu.clone(),
+                    tx_empty_buffers.clone(),
+                    tx_nonce_data.clone(),
+                    context,
+                    drive_id_to_plots.len(),
+                )
+            });
+        } else {
+            thread::spawn({
+                create_gpu_worker_task(
+                    cfg.benchmark_only.to_uppercase() == "I/O",
+                    rx_read_replies_gpu.clone(),
+                    tx_empty_buffers.clone(),
+                    tx_nonce_data.clone(),
+                    context,
+                    drive_id_to_plots.len(),
+                )
+            });
+        }
 
         let core = Core::new().unwrap();
         Miner {

@@ -174,6 +174,13 @@ impl Plot {
         if !self.dummy {
             self.fh.seek(seek_addr)?;
             self.fh.read_exact(&mut bs[0..bytes_to_read])?;
+            // interrupt avoider (not implemented)
+            // let read_chunk_size_in_nonces = 65536;
+            // for i in (0..bytes_to_read).step_by(read_chunk_size_in_nonces) {
+            //     self.fh.read_exact(
+            //         &mut bs[i..(i + min(read_chunk_size_in_nonces, bytes_to_read - i))],
+            //     )?;
+            // }
         }
         self.read_offset += bytes_to_read as u64;
 

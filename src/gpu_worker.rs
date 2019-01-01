@@ -26,34 +26,19 @@ pub fn create_gpu_worker_task(
             finished: false,
             account_id: 0,
         };
-
         let mut drive_count = 0;
-        //let mut last_dual = false;
 
         for read_reply in rx_read_replies {
             let mut buffer = read_reply.buffer;
-            /*
-            // todo try to get second buffer if in dual copy mode
-            match rx_interupt.try_recv() {
-                OK() -> {
-
-                }
-                Err(_) -> {
-
-                    }
-            }
-            */
 
             if read_reply.info.len == 0 || benchmark {
                 if read_reply.info.height == 1 {
                     drive_count = 0;
                     new_round = true;
-                    //   info!("START XCount{}", drive_count);
                 }
                 if read_reply.info.height == 0 {
                     drive_count += 1;
                     if drive_count == num_drives {
-                        //  info!("FINAL XCount{}", drive_count);
                         if !new_round {
                             let result = gpu_hash(
                                 context_mu.clone(),
@@ -81,7 +66,7 @@ pub fn create_gpu_worker_task(
                 tx_empty_buffers.send(buffer).unwrap();
                 continue;
             }
-
+            // todo check if obsolete due to start signal
             if *read_reply.info.gensig != *last_buffer_info_a.gensig {
                 new_round = true;
             }
@@ -123,7 +108,6 @@ pub fn create_gpu_worker_task(
             }
 
             tx_empty_buffers.send(buffer).unwrap();
-            // send second buffer if any
         }
     }
 }

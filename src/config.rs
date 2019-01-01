@@ -46,6 +46,9 @@ pub struct Cfg {
     #[serde(default = "default_gpu_mem_mapping")]
     pub gpu_mem_mapping: bool,
 
+    #[serde(default = "default_gpu_dual_copy_engines")]
+    pub gpu_dual_copy_engines: bool,
+
     #[serde(default = "default_target_deadline")]
     pub target_deadline: u64,
 
@@ -134,6 +137,10 @@ fn default_gpu_nonces_per_cache() -> usize {
 }
 
 fn default_gpu_mem_mapping() -> bool {
+    false
+}
+
+fn default_gpu_dual_copy_engines() -> bool {
     false
 }
 

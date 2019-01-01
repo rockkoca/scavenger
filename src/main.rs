@@ -27,7 +27,6 @@ extern crate log4rs;
 mod burstmath;
 mod config;
 mod cpu_worker;
-mod gpu_worker;
 mod logger;
 mod miner;
 mod plot;
@@ -36,6 +35,10 @@ mod requests;
 mod shabals;
 mod utils;
 
+#[cfg(feature = "opencl")]
+mod gpu_worker;
+#[cfg(feature = "opencl")]
+mod gpu_worker_dual;
 #[cfg(feature = "opencl")]
 mod ocl;
 
