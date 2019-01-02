@@ -20,7 +20,6 @@ extern crate clap;
 extern crate rand;
 #[macro_use]
 extern crate log;
-extern crate chrono;
 extern crate core_affinity;
 extern crate log4rs;
 

@@ -44,6 +44,7 @@ pub fn create_gpu_worker_task(
                                 context_mu.clone(),
                                 last_buffer_info_a.len / 64,
                                 last_buffer_a.as_ref().unwrap(),
+                                true,
                             );
                             let deadline = result.0;
                             let offset = result.1;
@@ -66,10 +67,6 @@ pub fn create_gpu_worker_task(
                 tx_empty_buffers.send(buffer).unwrap();
                 continue;
             }
-            // todo check if obsolete due to start signal
-            if *read_reply.info.gensig != *last_buffer_info_a.gensig {
-                new_round = true;
-            }
 
             if new_round {
                 gpu_transfer(
@@ -77,10 +74,6 @@ pub fn create_gpu_worker_task(
                     buffer.get_gpu_buffers().unwrap(),
                     *read_reply.info.gensig,
                 );
-                last_buffer_a = buffer.get_gpu_data();
-                last_buffer_info_a = read_reply.info;
-
-                new_round = false;
             } else {
                 let result = gpu_transfer_and_hash(
                     context_mu.clone(),
@@ -102,11 +95,10 @@ pub fn create_gpu_worker_task(
                     })
                     .wait()
                     .expect("failed to send nonce data");
-                last_buffer_a = buffer.get_gpu_data();
-                last_buffer_info_a = read_reply.info;
-                new_round = false;
             }
-
+            last_buffer_a = buffer.get_gpu_data();
+            last_buffer_info_a = read_reply.info;
+            new_round = false;
             tx_empty_buffers.send(buffer).unwrap();
         }
     }

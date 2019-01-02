@@ -230,6 +230,7 @@ impl Miner {
                 .unwrap();
         }
 
+        //todo reduce buffers
         for _ in 0..cpu_worker_thread_count * 2 {
             let cpu_buffer = CpuBuffer::new(buffer_size_cpu);
             tx_empty_buffers
