@@ -440,6 +440,19 @@ impl Buffer for GpuBuffer {
     fn get_gpu_data(&self) -> Option<core::Mem> {
         Some(self.data_gpu.clone())
     }
+
+    fn unmap(&self) {
+        if self.context.mapping {
+            core::enqueue_unmap_mem_object(
+                &self.context.queue_transfer_a,
+                &self.data_gpu,
+                self.buffer_ptr_host.as_ref().unwrap(),
+                None::<Event>,
+                None::<&mut Event>,
+            )
+            .unwrap();
+        }
+    }
 }
 
 // Ohne Gummi im Bahnhofsviertel... das wird noch Konsequenzen haben

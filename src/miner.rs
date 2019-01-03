@@ -79,6 +79,7 @@ pub trait Buffer {
     #[cfg(feature = "opencl")]
     fn get_gpu_buffers(&self) -> Option<&GpuBuffer>;
     fn get_gpu_data(&self) -> Option<core::Mem>;
+    fn unmap(&self);
 }
 
 pub struct CpuBuffer {
@@ -112,6 +113,7 @@ impl Buffer for CpuBuffer {
     fn get_gpu_data(&self) -> Option<core::Mem> {
         None
     }
+    fn unmap(&self) {}
 }
 
 fn scan_plots(
@@ -302,6 +304,7 @@ impl Miner {
                 total_size,
                 reader_thread_count,
                 rx_empty_buffers,
+                tx_empty_buffers,
                 tx_read_replies_cpu,
                 tx_read_replies_gpu,
                 cfg.show_progress,

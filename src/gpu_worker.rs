@@ -87,7 +87,7 @@ pub fn create_gpu_worker_task(
                 tx_nonce_data
                     .clone()
                     .send(NonceData {
-                        height: read_reply.info.height,
+                        height: last_buffer_info_a.height,
                         deadline,
                         nonce: offset + last_buffer_info_a.start_nonce,
                         reader_task_processed: last_buffer_info_a.finished,

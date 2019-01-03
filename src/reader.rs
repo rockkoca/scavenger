@@ -35,6 +35,7 @@ pub struct Reader {
     pub total_size: u64,
     pool: rayon::ThreadPool,
     rx_empty_buffers: chan::Receiver<Box<Buffer + Send>>,
+    tx_empty_buffers: chan::Sender<Box<Buffer + Send>>,
     tx_read_replies_cpu: chan::Sender<ReadReply>,
     tx_read_replies_gpu: chan::Sender<ReadReply>,
     interupts: Vec<Sender<()>>,
@@ -48,6 +49,7 @@ impl Reader {
         total_size: u64,
         num_threads: usize,
         rx_empty_buffers: chan::Receiver<Box<Buffer + Send>>,
+        tx_empty_buffers: chan::Sender<Box<Buffer + Send>>,
         tx_read_replies_cpu: chan::Sender<ReadReply>,
         tx_read_replies_gpu: chan::Sender<ReadReply>,
         show_progress: bool,
@@ -87,6 +89,7 @@ impl Reader {
                 .build()
                 .unwrap(),
             rx_empty_buffers,
+            tx_empty_buffers,
             tx_read_replies_cpu,
             tx_read_replies_gpu,
             interupts: Vec::new(),
@@ -99,7 +102,6 @@ impl Reader {
         for interupt in &self.interupts {
             interupt.send(()).ok();
         }
-
         let mut pb = ProgressBar::new(self.total_size);
         pb.format("│██░│");
         pb.set_width(Some(80));
@@ -183,10 +185,9 @@ impl Reader {
         gensig: Arc<[u8; 32]>,
         show_drive_stats: bool,
     ) -> (Sender<()>, impl FnOnce()) {
-        //Pin!
-
         let (tx_interupt, rx_interupt) = channel();
         let rx_empty_buffers = self.rx_empty_buffers.clone();
+        let tx_empty_buffers = self.tx_empty_buffers.clone();
         let tx_read_replies_cpu = self.tx_read_replies_cpu.clone();
         #[cfg(feature = "opencl")]
         let tx_read_replies_gpu = self.tx_read_replies_gpu.clone();
@@ -212,11 +213,12 @@ impl Reader {
                     if show_drive_stats {
                         sw.restart();
                     }
-                    let mut_bs = &*buffer.get_buffer_for_writing();
+                    let mut_bs = buffer.get_buffer_for_writing();
                     let mut bs = mut_bs.lock().unwrap();
                     let (bytes_read, start_nonce, next_plot) = match p.read(&mut *bs, scoop) {
                         Ok(x) => x,
                         Err(e) => {
+                            buffer.unmap();
                             error!(
                                 "reader: error reading chunk from {}: {} -> skip one round",
                                 p.name, e
@@ -225,9 +227,14 @@ impl Reader {
                         }
                     };
 
-                    let finished = i_p == (plot_count - 1) && next_plot;
-                    //fork
+                    if rx_interupt.try_recv() != Err(TryRecvError::Empty) {
+                        buffer.unmap();
+                        tx_empty_buffers.send(buffer).unwrap();
+                        break 'outer;
+                    }
 
+                    let finished = i_p == (plot_count - 1) && next_plot;
+                    // buffer routing
                     #[cfg(feature = "opencl")]
                     let gpu_context = buffer.get_gpu_context();
                     #[cfg(feature = "opencl")]
@@ -236,7 +243,6 @@ impl Reader {
                             tx_read_replies_cpu
                                 .send(ReadReply {
                                     buffer,
-
                                     info: BufferInfo {
                                         len: bytes_read,
                                         height,
@@ -252,7 +258,6 @@ impl Reader {
                             tx_read_replies_gpu
                                 .send(ReadReply {
                                     buffer,
-
                                     info: BufferInfo {
                                         len: bytes_read,
                                         height,
@@ -322,13 +327,8 @@ impl Reader {
                     if next_plot {
                         break 'inner;
                     }
-                    if rx_interupt.try_recv() != Err(TryRecvError::Empty) {
-                        break 'outer;
-                        // reset gpu
-                    }
                 }
             }
-            // reset gpu
         })
     }
 }
