@@ -239,18 +239,22 @@ impl RequestHandler {
     fn post_req(&self, path: &str) -> Request<hyper::Body> {
         if self.send_proxy_details {
             Request::post(self.uri_for(path))
-                .header("User-Agent", self.ua.to_owned())
-                .header("X-Capacity", self.total_size_gb)
-                .header("X-Miner", self.ua.to_owned())
+                .header("Host", "bhd.hpool.com".to_owned())
+                .header("Accept", "*/*".to_owned())
+                .header("X-Account", self.account_key.to_owned())
+                .header("X-Miner", "poc-miner-v1.0.4.2")
                 .header(
                     "X-Minername",
                     hostname::get_hostname().unwrap_or("".to_owned()),
-                ).header("X-Account", self.account_key.to_owned())
-                .header(
-                    "X-Plotfile",
-                    "ScavengerProxy/".to_owned()
-                        + &*hostname::get_hostname().unwrap_or("".to_owned()),
                 )
+                .header("X-Capacity", self.total_size_gb)
+                .header("Content-Length", 0)
+                .header("Content-Type", "application/x-www-form-urlencoded")
+//                .header(
+//                    "X-Plotfile",
+//                    "ScavengerProxy/".to_owned()
+//                        + &*hostname::get_hostname().unwrap_or("".to_owned()),
+//                )
                 .body(hyper::Body::empty())
                 .unwrap()
         } else {
