@@ -27,6 +27,7 @@ pub struct RequestHandler {
     ua: String,
     total_size_gb: usize,
     send_proxy_details: bool,
+    account_key: String,
 }
 
 pub enum FetchError {
@@ -65,8 +66,8 @@ pub struct MiningInfo {
     pub height: u64,
 
     #[serde(
-        default = "default_target_deadline",
-        deserialize_with = "from_str_or_int"
+    default = "default_target_deadline",
+    deserialize_with = "from_str_or_int"
     )]
     pub target_deadline: u64,
 }
@@ -96,8 +97,8 @@ pub struct PoolError {
 
 // MOTHERFUCKING pool
 fn from_str_or_int<'de, D>(deserializer: D) -> Result<u64, D::Error>
-where
-    D: de::Deserializer<'de>,
+    where
+        D: de::Deserializer<'de>,
 {
     struct StringOrIntVisitor;
 
@@ -128,6 +129,7 @@ impl RequestHandler {
         handle: Handle,
         total_size_gb: usize,
         send_proxy_details: bool,
+        account_key: String,
     ) -> RequestHandler {
         for secret_phrase in secret_phrases.values_mut() {
             *secret_phrase = byte_serialize(secret_phrase.as_bytes()).collect();
@@ -144,10 +146,11 @@ impl RequestHandler {
             ua: "scavenger/".to_owned() + crate_version!(),
             total_size_gb,
             send_proxy_details,
+            account_key,
         }
     }
 
-    pub fn get_mining_info(&self) -> Box<Future<Item = MiningInfo, Error = FetchError>> {
+    pub fn get_mining_info(&self) -> Box<Future<Item=MiningInfo, Error=FetchError>> {
         Box::new(self.do_req(self.get_req("/burst?requestType=getMiningInfo")))
     }
 
@@ -204,7 +207,7 @@ impl RequestHandler {
                     Err(_) => {
                         warn!(
                             "{: <80}",
-                            format!("submission failed:, attempt={}, account={}, nonce={}, deadline={}", retried+1, account_id, nonce, d)
+                            format!("submission failed:, attempt={}, account={}, nonce={}, deadline={}", retried + 1, account_id, nonce, d)
                         );
                         if retried < 3 {
                             rh.submit_nonce(
@@ -242,7 +245,7 @@ impl RequestHandler {
                 .header(
                     "X-Minername",
                     hostname::get_hostname().unwrap_or("".to_owned()),
-                )
+                ).header("X-Account", self.account_key.to_owned())
                 .header(
                     "X-Plotfile",
                     "ScavengerProxy/".to_owned()
@@ -268,7 +271,7 @@ impl RequestHandler {
     fn do_req<T: DeserializeOwned>(
         &self,
         req: Request<hyper::Body>,
-    ) -> impl Future<Item = T, Error = FetchError> {
+    ) -> impl Future<Item=T, Error=FetchError> {
         let req = self
             .client
             .request(req)

@@ -1,6 +1,6 @@
 account_id_to_secret_phrase:                   # define accounts and passphrases for solo mining 
-  10282355196851764065: 'glad suffer red during single glow shut slam hill death lust although'  
-  1796535821016683299: 'stand rude those door invite reflection anywhere lace safe hidden fur horrible'  
+  10282355196851764065: 'glad suffer red during single glow shut slam hill death lust although'
+  1796535821016683299: 'stand rude those door invite reflection anywhere lace safe hidden fur horrible'
 
 plot_dirs:
   - 'test_data'
@@ -11,6 +11,8 @@ plot_dirs:
 url: 'http://wallet.dev.burst-test.net:6876'   # testnet wallet
 # url: 'http://pool.dev.burst-test.net:8124'   # testnet pool
 # url: 'http://dummypool.megash.it'            # dummypool with constant scoop number for benchmarking
+
+account_key: '00000000-0000-0000-0000-000000000000'  # support hpool.com BHD mining
 
 hdd_reader_thread_count: 0            # default 0 (=number of disks)
 hdd_use_direct_io: true               # default true
@@ -28,8 +30,8 @@ gpu_mem_mapping: false                # default false
 
 target_deadline: 4294967295           # default u32::MAX
 account_id_to_target_deadline:        # target dls for multi-id (optional)
- 10282355196851764065: 600000
- 1796535821016683299: 55555555
+  10282355196851764065: 600000
+  1796535821016683299: 55555555
 
 get_mining_info_interval: 3000        # default 3000ms
 timeout: 5000                         # default 5000ms
@@ -38,7 +40,7 @@ send_proxy_details: true              # default false
 console_log_level: 'info'             # default Info, options (off, error, warn, info, debug, trace)
 logfile_log_level: 'warn'             # default Warn, options (off, error, warn, info, debug, trace)
 logfile_max_count: 10                 # maximum number of log files to keep
-logfile_max_size : 20                 # maximum size per logfile in MiB
+logfile_max_size: 20                 # maximum size per logfile in MiB
 
 show_progress: true                   # default true  
 show_drive_stats: false               # default false 

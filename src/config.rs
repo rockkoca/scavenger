@@ -1,4 +1,5 @@
 extern crate serde_yaml;
+extern crate sys_info;
 
 use std::collections::HashMap;
 use std::fs;
@@ -87,6 +88,9 @@ pub struct Cfg {
     #[serde(default = "default_benchmark_only")]
     pub benchmark_only: String,
 
+    #[serde(default = "default_account_key")]
+    pub account_key: String,
+
     #[serde(default = "default_multi_chain")]
     pub multi_chain: bool,
 
@@ -95,6 +99,10 @@ pub struct Cfg {
 
     #[serde(default = "default_minimum_block_height")]
     pub minimum_block_height: u64,
+}
+
+fn default_account_key() -> String {
+    "00000000-0000-0000-0000-000000000000".to_owned()
 }
 
 fn default_secret_phrase() -> HashMap<u64, String> {

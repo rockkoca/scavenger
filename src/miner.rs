@@ -290,6 +290,7 @@ impl Miner {
                 core.handle(),
                 total_size as usize * 4096 / 1024 / 1024 / 1024,
                 cfg.send_proxy_details,
+                cfg.account_key
             ),
             state: Arc::new(Mutex::new(State {
                 generation_signature: "".to_owned(),
