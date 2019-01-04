@@ -151,7 +151,7 @@ impl RequestHandler {
     }
 
     pub fn get_mining_info(&self) -> Box<Future<Item=MiningInfo, Error=FetchError>> {
-        Box::new(self.do_req(self.get_req("/burst?requestType=getMiningInfo")))
+        Box::new(self.do_req(self.post_req("/burst?requestType=getMiningInfo")))
     }
 
     pub fn submit_nonce(
